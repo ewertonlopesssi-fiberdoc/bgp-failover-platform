@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import * as db from "./db";
+import { onDestinationDeleted } from "./monitor";
 
 const JWT_SECRET = process.env.JWT_SECRET || "bgp-failover-secret-key";
 const LOCAL_AUTH_COOKIE = "bgp_local_auth";
@@ -259,13 +260,31 @@ export const appRouter = router({
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
+        // Buscar destino e operadora antes de deletar (para remover NQA)
+        const allDests = await db.listDestinations();
+        const dest = allDests.find(d => d.id === input.id);
+        let operatorName = "";
+        if (dest) {
+          const ops = await db.listOperators();
+          const op = ops.find(o => o.id === dest.operatorId);
+          operatorName = op?.name || "";
+          // Remover teste NQA do Ne8000 (se configurado)
+          const ne8Config = await db.getNe8000Config();
+          if (ne8Config && ne8Config.host && operatorName) {
+            onDestinationDeleted(input.id, operatorName, {
+              host: ne8Config.host,
+              port: ne8Config.port || 22,
+              username: ne8Config.username,
+              password: ne8Config.password || undefined,
+            }).catch(err => console.warn("[NQA] Aviso ao remover teste:", err.message));
+          }
+        }
         await db.deleteDestination(input.id);
         await db.addAuditLog({ type: "config_change", severity: "warning", title: `Destino removido: ID ${input.id}`, userId: (ctx as any).localUser?.id });
         return { success: true };
       }),
   }),
-
-  // ─── Telegram Config ──────────────────────────────────────────────────────
+  // ─── Telegram Configg ──────────────────────────────────────────────────────
   telegram: router({
     get: localAuthProcedure.query(async () => {
       const config = await db.getTelegramConfig();
