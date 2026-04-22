@@ -92,6 +92,14 @@ main() {
         log_info "Módulos copiados"
     fi
     
+    # Copiar scripts
+    if [ -d "$SOURCE_DIR/scripts" ]; then
+        mkdir -p "$INSTALL_DIR/scripts"
+        cp "$SOURCE_DIR/scripts"/*.sh "$INSTALL_DIR/scripts/" 2>/dev/null || true
+        chmod +x "$INSTALL_DIR/scripts"/*.sh
+        log_info "Scripts copiados"
+    fi
+    
     # Copiar documentação
     if [ -d "$SOURCE_DIR/docs" ]; then
         cp "$SOURCE_DIR/docs"/*.md "$INSTALL_DIR/docs/" 2>/dev/null || true
