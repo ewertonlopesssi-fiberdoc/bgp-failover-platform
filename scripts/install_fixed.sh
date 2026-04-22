@@ -114,8 +114,8 @@ main() {
     # 5. Instalar dependências Python
     log_section "Instalando dependências Python"
     if [ -f "$SOURCE_DIR/requirements.txt" ]; then
-        pip3 install --upgrade pip
-        pip3 install -r "$SOURCE_DIR/requirements.txt"
+        pip3 install --upgrade pip --break-system-packages
+        pip3 install -r "$SOURCE_DIR/requirements.txt" --break-system-packages
         log_info "Dependências Python instaladas"
     else
         log_warn "requirements.txt não encontrado"
