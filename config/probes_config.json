@@ -1,0 +1,17 @@
+{
+  "local_probes": [
+    {
+      "name": "local_op1",
+      "source_ip": "192.168.1.2"
+    },
+    {
+      "name": "local_op2",
+      "source_ip": "192.168.2.2"
+    },
+    {
+      "name": "local_op3",
+      "source_ip": "192.168.3.2"
+    }
+  ],
+  "remote_probes": []
+}

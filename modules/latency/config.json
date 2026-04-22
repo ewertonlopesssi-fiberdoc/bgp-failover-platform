@@ -1,0 +1,28 @@
+{
+  "enabled": true,
+  "destinos": [
+    {
+      "nome": "AWS_SAO_PAULO",
+      "ip": "52.67.0.1",
+      "operadoras": ["operadora_1", "operadora_2", "operadora_3"],
+      "latencia_limite_ms": 100,
+      "perda_limite_percent": 1
+    },
+    {
+      "nome": "DNS_GOOGLE",
+      "ip": "8.8.8.8",
+      "operadoras": ["operadora_1", "operadora_2", "operadora_3"],
+      "latencia_limite_ms": 50,
+      "perda_limite_percent": 0.5
+    }
+  ],
+  "nqa": {
+    "enabled": true,
+    "frequency": 30,
+    "timeout": 5
+  },
+  "probes": {
+    "enabled": true,
+    "timeout": 5
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "ne8000": {
+    "host": "192.168.0.1",
+    "username": "admin",
+    "password": "",
+    "key_filename": "/etc/bgp_failover/ne8000_key.pem",
+    "port": 22
+  },
+  "operadoras": {
+    "operadora_1": {
+      "source_ip": "192.168.1.2",
+      "interface": "GigabitEthernet0/0/0",
+      "bgp_peer": "192.168.1.1"
+    },
+    "operadora_2": {
+      "source_ip": "192.168.2.2",
+      "interface": "GigabitEthernet0/0/1",
+      "bgp_peer": "192.168.2.1"
+    },
+    "operadora_3": {
+      "source_ip": "192.168.3.2",
+      "interface": "GigabitEthernet0/0/2",
+      "bgp_peer": "192.168.3.1"
+    }
+  }
+}
