@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import { startMonitor } from "../monitor";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -60,6 +61,8 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Iniciar daemon de monitoramento passivo (somente leitura)
+    startMonitor(30);
   });
 }
 

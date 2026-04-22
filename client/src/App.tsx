@@ -14,6 +14,7 @@ import LatencyCharts from "./pages/LatencyCharts";
 import ServiceControl from "./pages/ServiceControl";
 import AuditLogs from "./pages/AuditLogs";
 import DestinationsManagement from "./pages/DestinationsManagement";
+import OperatorsManagement from "./pages/OperatorsManagement";
 import DashboardLayout from "./components/DashboardLayout";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -43,6 +44,7 @@ function Router() {
       <Route path="/service" component={() => <ProtectedRoute component={ServiceControl} />} />
       <Route path="/audit" component={() => <ProtectedRoute component={AuditLogs} />} />
       <Route path="/destinations" component={() => <ProtectedRoute component={DestinationsManagement} />} />
+      <Route path="/operators" component={() => <ProtectedRoute component={OperatorsManagement} />} />
       <Route component={() => <Redirect to="/" />} />
     </Switch>
   );

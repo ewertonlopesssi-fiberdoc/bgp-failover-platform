@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Activity } from "lucide-react";
 import { format } from "date-fns";
 
+// v2 - fixed empty Select values
 const COLORS = ["oklch(0.72 0.16 255)", "oklch(0.72 0.18 160)", "oklch(0.72 0.18 30)"];
 
 export default function LatencyCharts() {

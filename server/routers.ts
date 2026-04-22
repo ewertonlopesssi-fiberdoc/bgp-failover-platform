@@ -92,7 +92,7 @@ export const appRouter = router({
         const isSecure = ctx.req.protocol === "https" || (ctx.req.headers["x-forwarded-proto"] as string) === "https";
         ctx.res.cookie(LOCAL_AUTH_COOKIE, token, {
           httpOnly: true, secure: isSecure, sameSite: isSecure ? "none" : "lax",
-          maxAge: 86400, path: "/",
+          maxAge: 86400000, path: "/", // 24 horas em milissegundos
         });
         return { success: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } };
       }),
@@ -388,19 +388,36 @@ export const appRouter = router({
   // ─── Service Control ──────────────────────────────────────────────────────
   service: router({
     status: localAuthProcedure.query(async () => {
+      const { getMonitorStatus } = await import("./monitor");
+      const monitorStatus = getMonitorStatus();
       return {
-        status: "running" as const,
+        status: monitorStatus.running ? "running" as const : "stopped" as const,
         uptime: Math.floor(process.uptime()),
         version: "2.0.0",
         apiHealthy: true,
         dbConnected: true,
         timestamp: new Date(),
+        monitor: {
+          active: monitorStatus.running,
+          isExecuting: monitorStatus.isExecuting,
+          lastRunAt: monitorStatus.lastRunAt,
+          lastError: monitorStatus.lastError,
+          consecutiveFailures: monitorStatus.consecutiveFailures,
+        },
       };
     }),
-
     action: adminProcedure
       .input(z.object({ action: z.enum(["start", "stop", "restart"]) }))
       .mutation(async ({ input, ctx }) => {
+        const { startMonitor, stopMonitor } = await import("./monitor");
+        if (input.action === "start") {
+          startMonitor(30);
+        } else if (input.action === "stop") {
+          stopMonitor();
+        } else if (input.action === "restart") {
+          stopMonitor();
+          setTimeout(() => startMonitor(30), 1000);
+        }
         await db.addAuditLog({
           type: "service",
           severity: input.action === "stop" ? "warning" : "info",
