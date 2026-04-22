@@ -8,14 +8,14 @@ import { format } from "date-fns";
 const COLORS = ["oklch(0.72 0.16 255)", "oklch(0.72 0.18 160)", "oklch(0.72 0.18 30)"];
 
 export default function LatencyCharts() {
-  const [selectedDest, setSelectedDest] = useState<string>("");
-  const [selectedOp, setSelectedOp] = useState<string>("");
+  const [selectedDest, setSelectedDest] = useState<string>("all");
+  const [selectedOp, setSelectedOp] = useState<string>("all");
   const [hours, setHours] = useState("6");
 
   const { data: operators } = trpc.operators.list.useQuery();
   const { data: destinations } = trpc.destinations.list.useQuery({ operatorId: undefined });
   const { data: rawMetrics } = trpc.latency.list.useQuery(
-    { operatorId: selectedOp ? Number(selectedOp) : undefined, destinationId: selectedDest ? Number(selectedDest) : undefined, hours: Number(hours) },
+    { operatorId: selectedOp && selectedOp !== "all" ? Number(selectedOp) : undefined, destinationId: selectedDest && selectedDest !== "all" ? Number(selectedDest) : undefined, hours: Number(hours) },
     { refetchInterval: 30000 }
   );
 
@@ -73,11 +73,11 @@ export default function LatencyCharts() {
       <div className="flex flex-wrap gap-3">
         <Select value={selectedOp} onValueChange={setSelectedOp}>
           <SelectTrigger className="w-48 h-9 bg-card border-border text-sm"><SelectValue placeholder="Todas as operadoras" /></SelectTrigger>
-          <SelectContent className="bg-card border-border"><SelectItem value="">Todas as operadoras</SelectItem>{operators?.map(op => <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>)}</SelectContent>
+          <SelectContent className="bg-card border-border"><SelectItem value="all">Todas as operadoras</SelectItem>{operators?.map(op => <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>)}</SelectContent>
         </Select>
         <Select value={selectedDest} onValueChange={setSelectedDest}>
           <SelectTrigger className="w-48 h-9 bg-card border-border text-sm"><SelectValue placeholder="Todos os destinos" /></SelectTrigger>
-          <SelectContent className="bg-card border-border"><SelectItem value="">Todos os destinos</SelectItem>{destinations?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}</SelectContent>
+          <SelectContent className="bg-card border-border"><SelectItem value="all">Todos os destinos</SelectItem>{destinations?.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}</SelectContent>
         </Select>
         <Select value={hours} onValueChange={setHours}>
           <SelectTrigger className="w-36 h-9 bg-card border-border text-sm"><SelectValue /></SelectTrigger>

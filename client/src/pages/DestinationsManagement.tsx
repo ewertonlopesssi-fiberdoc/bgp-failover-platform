@@ -12,8 +12,8 @@ export default function DestinationsManagement() {
   const { isAdmin } = useLocalAuth();
   const utils = trpc.useUtils();
   const { data: operators } = trpc.operators.list.useQuery();
-  const [selectedOp, setSelectedOp] = useState<string>("");
-  const { data: destinations } = trpc.destinations.list.useQuery({ operatorId: selectedOp ? Number(selectedOp) : undefined });
+  const [selectedOp, setSelectedOp] = useState<string>("all");
+  const { data: destinations } = trpc.destinations.list.useQuery({ operatorId: selectedOp && selectedOp !== "all" ? Number(selectedOp) : undefined });
   const [form, setForm] = useState({ name: "", host: "" });
   const [showForm, setShowForm] = useState(false);
 
@@ -33,7 +33,7 @@ export default function DestinationsManagement() {
           <h1 className="text-xl font-semibold text-foreground flex items-center gap-2"><MapPin className="w-5 h-5 text-primary" />Destinos Monitorados</h1>
           <p className="text-sm text-muted-foreground mt-0.5">IPs e hosts monitorados por operadora para detecção de falhas</p>
         </div>
-        {isAdmin && selectedOp && <Button size="sm" onClick={() => setShowForm(!showForm)} className="gap-1.5"><Plus className="w-3.5 h-3.5" />Adicionar Destino</Button>}
+        {isAdmin && selectedOp && selectedOp !== "all" && <Button size="sm" onClick={() => setShowForm(!showForm)} className="gap-1.5"><Plus className="w-3.5 h-3.5" />Adicionar Destino</Button>}
       </div>
 
       <div className="flex items-center gap-3">
@@ -41,13 +41,13 @@ export default function DestinationsManagement() {
         <Select value={selectedOp} onValueChange={setSelectedOp}>
           <SelectTrigger className="w-56 h-9 bg-card border-border text-sm"><SelectValue placeholder="Selecione uma operadora" /></SelectTrigger>
           <SelectContent className="bg-card border-border">
-            <SelectItem value="">Todas</SelectItem>
+            <SelectItem value="all">Todas</SelectItem>
             {operators?.map(op => <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
 
-      {showForm && isAdmin && selectedOp && (
+      {showForm && isAdmin && selectedOp && selectedOp !== "all" && (
         <div className="rounded-xl border p-5 space-y-4" style={{ background: "oklch(0.11 0.01 260)", borderColor: "oklch(0.22 0.015 260)" }}>
           <p className="text-sm font-medium text-foreground">Novo Destino</p>
           <div className="grid grid-cols-2 gap-3">
