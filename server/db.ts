@@ -179,6 +179,12 @@ export async function createDestination(data: { operatorId: number; name: string
   await db.insert(destinations).values(data);
 }
 
+export async function updateDestination(id: number, data: { operatorId?: number; name?: string; host?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(destinations).set(data).where(eq(destinations.id, id));
+}
+
 export async function deleteDestination(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

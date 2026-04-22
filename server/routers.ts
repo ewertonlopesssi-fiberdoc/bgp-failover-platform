@@ -248,6 +248,14 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    update: adminProcedure
+      .input(z.object({ id: z.number(), operatorId: z.number().optional(), name: z.string().min(1).optional(), host: z.string().min(1).optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        await db.updateDestination(id, data);
+        await db.addAuditLog({ type: "config_change", severity: "info", title: `Destino editado: ID ${id}`, userId: (ctx as any).localUser?.id });
+        return { success: true };
+      }),
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {

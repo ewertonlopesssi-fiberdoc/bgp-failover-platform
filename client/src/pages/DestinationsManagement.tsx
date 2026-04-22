@@ -6,8 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { MapPin, Plus, Trash2, Target } from "lucide-react";
-
+import { MapPin, Plus, Trash2, Target, Pencil, Check, X } from "lucide-react";
 export default function DestinationsManagement() {
   const { isAdmin } = useLocalAuth();
   const utils = trpc.useUtils();
@@ -19,6 +18,10 @@ export default function DestinationsManagement() {
   const [form, setForm] = useState({ name: "", host: "", operatorId: "" });
   const [showForm, setShowForm] = useState(false);
 
+  // Estado de edição inline
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", host: "", operatorId: "" });
+
   const createMutation = trpc.destinations.create.useMutation({
     onSuccess: () => {
       toast.success("Destino adicionado");
@@ -28,12 +31,31 @@ export default function DestinationsManagement() {
     },
     onError: (e) => toast.error(e.message),
   });
+  const updateMutation = trpc.destinations.update.useMutation({
+    onSuccess: () => {
+      toast.success("Destino atualizado");
+      utils.destinations.list.invalidate();
+      setEditingId(null);
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const deleteMutation = trpc.destinations.delete.useMutation({
     onSuccess: () => { toast.success("Destino removido"); utils.destinations.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
   const hasOperators = operators && operators.length > 0;
+
+  function startEdit(dest: { id: number; name: string; host: string; operatorId: number }) {
+    setEditingId(dest.id);
+    setEditForm({ name: dest.name, host: dest.host, operatorId: String(dest.operatorId) });
+    setShowForm(false);
+  }
+  function cancelEdit() { setEditingId(null); }
+  function saveEdit() {
+    if (!editingId || !editForm.name || !editForm.host || !editForm.operatorId) return;
+    updateMutation.mutate({ id: editingId, name: editForm.name, host: editForm.host, operatorId: Number(editForm.operatorId) });
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -53,6 +75,7 @@ export default function DestinationsManagement() {
                 return;
               }
               setShowForm(!showForm);
+              setEditingId(null);
             }}
             className="gap-1.5"
           >
@@ -141,27 +164,62 @@ export default function DestinationsManagement() {
             </div>
           ) : destinations?.map(dest => {
             const op = operators?.find(o => o.id === dest.operatorId);
+            const isEditing = editingId === dest.id;
             return (
-              <div key={dest.id} className="flex items-center gap-4 px-6 py-4 hover:bg-white/[0.02] transition-colors">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "oklch(0.55 0.20 255 / 0.1)" }}>
-                  <Target className="w-4 h-4 text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{dest.name}</span>
-                    {op && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{op.name}</span>}
+              <div key={dest.id} className="px-6 py-4 hover:bg-white/[0.02] transition-colors">
+                {isEditing ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Nome</Label>
+                        <Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className="h-8 bg-input border-border text-sm" autoFocus />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">IP ou Hostname</Label>
+                        <Input value={editForm.host} onChange={e => setEditForm(f => ({ ...f, host: e.target.value }))} className="h-8 bg-input border-border text-sm" />
+                      </div>
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-xs text-muted-foreground">Operadora</Label>
+                        <Select value={editForm.operatorId} onValueChange={v => setEditForm(f => ({ ...f, operatorId: v }))}>
+                          <SelectTrigger className="h-8 bg-input border-border text-sm"><SelectValue placeholder="Selecione" /></SelectTrigger>
+                          <SelectContent className="bg-card border-border">
+                            {operators?.map(o => <SelectItem key={o.id} value={String(o.id)}>{o.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={saveEdit} disabled={updateMutation.isPending || !editForm.name || !editForm.host || !editForm.operatorId} className="h-7 text-xs gap-1.5">
+                        <Check className="w-3 h-3" />{updateMutation.isPending ? "Salvando..." : "Salvar"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={cancelEdit} className="h-7 text-xs gap-1.5">
+                        <X className="w-3 h-3" />Cancelar
+                      </Button>
+                    </div>
                   </div>
-                  <span className="text-xs font-mono text-muted-foreground">{dest.host}</span>
-                </div>
-                {isAdmin && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="w-7 h-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
-                    onClick={() => { if (confirm("Remover destino?")) deleteMutation.mutate({ id: dest.id }); }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "oklch(0.55 0.20 255 / 0.1)" }}>
+                      <Target className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{dest.name}</span>
+                        {op && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{op.name}</span>}
+                      </div>
+                      <span className="text-xs font-mono text-muted-foreground">{dest.host}</span>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-primary hover:bg-primary/10" onClick={() => startEdit(dest)} title="Editar destino">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground hover:text-red-400 hover:bg-red-500/10" onClick={() => { if (confirm("Remover destino?")) deleteMutation.mutate({ id: dest.id }); }} title="Remover destino">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             );
