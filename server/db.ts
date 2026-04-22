@@ -1,11 +1,16 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  InsertUser, users,
+  localUsers, InsertLocalUser,
+  ne8000Config, operators, destinations,
+  telegramConfig, dedicatedClients, clientDestinations,
+  latencyMetrics, auditLogs, clientFailoverState,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -18,75 +23,292 @@ export async function getDb() {
   return _db;
 }
 
+// ─── OAuth Users ─────────────────────────────────────────────────────────────
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  if (!db) return;
+  const values: InsertUser = { openId: user.openId };
+  const updateSet: Record<string, unknown> = {};
+  const textFields = ["name", "email", "loginMethod"] as const;
+  textFields.forEach((field) => {
+    const value = user[field];
+    if (value === undefined) return;
+    const normalized = value ?? null;
+    values[field] = normalized;
+    updateSet[field] = normalized;
+  });
+  if (user.lastSignedIn !== undefined) { values.lastSignedIn = user.lastSignedIn; updateSet.lastSignedIn = user.lastSignedIn; }
+  if (user.role !== undefined) { values.role = user.role; updateSet.role = user.role; }
+  else if (user.openId === ENV.ownerOpenId) { values.role = 'admin'; updateSet.role = 'admin'; }
+  if (!values.lastSignedIn) values.lastSignedIn = new Date();
+  if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ─── Local Auth Users ─────────────────────────────────────────────────────────
+export async function getLocalUserByUsername(username: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(localUsers).where(eq(localUsers.username, username)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getLocalUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(localUsers).where(eq(localUsers.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function listLocalUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: localUsers.id,
+    username: localUsers.username,
+    name: localUsers.name,
+    email: localUsers.email,
+    role: localUsers.role,
+    active: localUsers.active,
+    createdAt: localUsers.createdAt,
+    lastSignedIn: localUsers.lastSignedIn,
+  }).from(localUsers).orderBy(desc(localUsers.createdAt));
+}
+
+export async function createLocalUser(data: InsertLocalUser) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(localUsers).values(data);
+}
+
+export async function updateLocalUser(id: number, data: Partial<InsertLocalUser>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(localUsers).set(data).where(eq(localUsers.id, id));
+}
+
+export async function deleteLocalUser(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(localUsers).where(eq(localUsers.id, id));
+}
+
+export async function updateLocalUserLastSignedIn(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(localUsers).set({ lastSignedIn: new Date() }).where(eq(localUsers.id, id));
+}
+
+export async function countLocalUsers() {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ id: localUsers.id }).from(localUsers);
+  return result.length;
+}
+
+// ─── Ne8000 Config ────────────────────────────────────────────────────────────
+export async function getNe8000Config() {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(ne8000Config).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function saveNe8000Config(data: {
+  host: string; port: number; username: string;
+  sshKeyPath?: string; password?: string; asNumber?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getNe8000Config();
+  if (existing) {
+    await db.update(ne8000Config).set(data).where(eq(ne8000Config.id, existing.id));
+  } else {
+    await db.insert(ne8000Config).values(data);
+  }
+}
+
+// ─── Operators ────────────────────────────────────────────────────────────────
+export async function listOperators() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(operators).orderBy(operators.id);
+}
+
+export async function createOperator(data: {
+  name: string; interface: string; sourceIp: string; peerIp: string; asNumber?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(operators).values(data);
+}
+
+export async function updateOperator(id: number, data: Partial<typeof operators.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(operators).set(data).where(eq(operators.id, id));
+}
+
+export async function deleteOperator(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(operators).where(eq(operators.id, id));
+}
+
+// ─── Destinations ─────────────────────────────────────────────────────────────
+export async function listDestinations(operatorId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (operatorId !== undefined) {
+    return db.select().from(destinations).where(eq(destinations.operatorId, operatorId));
+  }
+  return db.select().from(destinations);
+}
+
+export async function createDestination(data: { operatorId: number; name: string; host: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(destinations).values(data);
+}
+
+export async function deleteDestination(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(destinations).where(eq(destinations.id, id));
+}
+
+// ─── Telegram Config ──────────────────────────────────────────────────────────
+export async function getTelegramConfig() {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(telegramConfig).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function saveTelegramConfig(data: {
+  botToken?: string; chatId?: string; enabled: boolean;
+  notifyFailover: boolean; notifyRecovery: boolean;
+  notifyHighLatency: boolean; notifyBgpDown: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getTelegramConfig();
+  if (existing) {
+    await db.update(telegramConfig).set(data).where(eq(telegramConfig.id, existing.id));
+  } else {
+    await db.insert(telegramConfig).values(data);
+  }
+}
+
+// ─── Dedicated Clients ────────────────────────────────────────────────────────
+export async function listDedicatedClients() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(dedicatedClients).orderBy(desc(dedicatedClients.createdAt));
+}
+
+export async function getDedicatedClientById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(dedicatedClients).where(eq(dedicatedClients.id, id)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function createDedicatedClient(data: {
+  name: string; prefix: string; description?: string;
+  failoverEnabled: boolean; latencyThreshold: number;
+  packetLossThreshold: number; prependCount: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(dedicatedClients).values(data);
+}
+
+export async function updateDedicatedClient(id: number, data: Partial<typeof dedicatedClients.$inferInsert>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(dedicatedClients).set(data).where(eq(dedicatedClients.id, id));
+}
+
+export async function deleteDedicatedClient(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(dedicatedClients).where(eq(dedicatedClients.id, id));
+  await db.delete(clientDestinations).where(eq(clientDestinations.clientId, id));
+  await db.delete(clientFailoverState).where(eq(clientFailoverState.clientId, id));
+}
+
+// ─── Client Destinations ──────────────────────────────────────────────────────
+export async function listClientDestinations(clientId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(clientDestinations).where(eq(clientDestinations.clientId, clientId));
+}
+
+export async function createClientDestination(data: { clientId: number; name: string; host: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(clientDestinations).values(data);
+}
+
+export async function deleteClientDestination(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(clientDestinations).where(eq(clientDestinations.id, id));
+}
+
+// ─── Latency Metrics ──────────────────────────────────────────────────────────
+export async function addLatencyMetric(data: {
+  operatorId: number; destinationId: number;
+  latencyMs: number; packetLoss: number; jitterMs: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(latencyMetrics).values(data);
+}
+
+export async function getLatencyMetrics(operatorId?: number, destinationId?: number, hours = 24) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const conditions = [gte(latencyMetrics.measuredAt, since)];
+  if (operatorId !== undefined) conditions.push(eq(latencyMetrics.operatorId, operatorId));
+  if (destinationId !== undefined) conditions.push(eq(latencyMetrics.destinationId, destinationId));
+  return db.select().from(latencyMetrics)
+    .where(and(...conditions))
+    .orderBy(desc(latencyMetrics.measuredAt))
+    .limit(500);
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+export async function addAuditLog(data: {
+  type: "failover" | "recovery" | "config_change" | "alert" | "service" | "auth" | "info";
+  severity: "info" | "warning" | "critical" | "success";
+  title: string; description?: string; metadata?: unknown; userId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(auditLogs).values(data as typeof auditLogs.$inferInsert);
+}
+
+export async function listAuditLogs(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+}
+
+// ─── Client Failover State ────────────────────────────────────────────────────
+export async function getClientFailoverState(clientId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(clientFailoverState).where(eq(clientFailoverState.clientId, clientId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}

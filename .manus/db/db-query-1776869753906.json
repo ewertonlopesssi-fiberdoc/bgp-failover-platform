@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `audit_logs` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`type` enum('failover','recovery','config_change','alert','service','auth','info') NOT NULL,\n\t`severity` enum('info','warning','critical','success') NOT NULL DEFAULT 'info',\n\t`title` varchar(255) NOT NULL,\n\t`description` text,\n\t`metadata` json,\n\t`userId` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `audit_logs_id` PRIMARY KEY(`id`)\n)",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user xU6XWjbPmh3BeaA.98284fc6b854 --database 2WePvJmLHfrFbacW6Bno4S --execute CREATE TABLE `audit_logs` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`type` enum('failover','recovery','config_change','alert','service','auth','info') NOT NULL,\n\t`severity` enum('info','warning','critical','success') NOT NULL DEFAULT 'info',\n\t`title` varchar(255) NOT NULL,\n\t`description` text,\n\t`metadata` json,\n\t`userId` int,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `audit_logs_id` PRIMARY KEY(`id`)\n)",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 518
+}
