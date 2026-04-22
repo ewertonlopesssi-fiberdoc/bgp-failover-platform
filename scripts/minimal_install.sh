@@ -95,7 +95,7 @@ main() {
     
     # 7. Executar instalador
     print_section "Executando instalador"
-    bash scripts/install_debian.sh
+    bash scripts/install_fixed.sh
     
     print_header
     print_success "Instalação concluída!"
