@@ -702,11 +702,15 @@ function ProbeSection({
   colorIndex,
   isAdmin,
   onOpenHistory,
+  onDeleteProbe,
+  onToggleProbe,
 }: {
   probe: { id: number; name: string; sourceIp: string; active: boolean; loopbackActive: boolean };
   colorIndex: number;
   isAdmin: boolean;
   onOpenHistory: (target: HistoryTarget) => void;
+  onDeleteProbe?: (id: number) => void;
+  onToggleProbe?: (id: number, active: boolean) => void;
 }) {
   const utils = trpc.useUtils();
   const [showDestinations, setShowDestinations] = useState(true);
@@ -784,6 +788,24 @@ function ProbeSection({
             <Badge variant={probe.active ? "default" : "outline"} className="text-xs">
               {probe.active ? "Ativo" : "Inativo"}
             </Badge>
+            {isAdmin && onToggleProbe && (
+              <Switch
+                checked={probe.active}
+                onCheckedChange={(v) => onToggleProbe(probe.id, v)}
+                title={probe.active ? "Desativar probe" : "Ativar probe"}
+              />
+            )}
+            {isAdmin && onDeleteProbe && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => onDeleteProbe(probe.id)}
+                title="Remover probe"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => setShowDestinations(!showDestinations)}>
               {showDestinations ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
@@ -987,23 +1009,43 @@ function ProbeSection({
 
 export default function LinuxMonitor() {
   const { isAdmin } = useLocalAuth();
+  const utils = trpc.useUtils();
   const [historyTarget, setHistoryTarget] = useState<HistoryTarget | null>(null);
-  const [editFromHistory, setEditFromHistory] = useState<any | null>(null);
+  const [showAddProbe, setShowAddProbe] = useState(false);
+  const [probeForm, setProbeForm] = useState({ name: "", sourceIp: "", operatorId: "" });
+  const [deleteProbeId, setDeleteProbeId] = useState<number | null>(null);
 
   const { data: probes, isLoading: probesLoading, refetch: refetchProbes } = trpc.linuxProbes.list.useQuery(
     undefined,
     { refetchInterval: 30000 }
   );
+  const { data: operators } = trpc.operators.list.useQuery();
 
-  // When user clicks "Editar" from within the history sheet, close history and open edit modal
-  // We pass this down via a callback to the ProbeSection that owns the edit modal
-  // Instead, we open the edit modal at the page level
+  const addProbeMut = trpc.linuxProbes.add.useMutation({
+    onSuccess: () => {
+      utils.linuxProbes.list.invalidate();
+      setShowAddProbe(false);
+      setProbeForm({ name: "", sourceIp: "", operatorId: "" });
+      toast.success("Probe adicionada com sucesso");
+    },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
+  });
+  const removeProbeMut = trpc.linuxProbes.remove.useMutation({
+    onSuccess: () => { utils.linuxProbes.list.invalidate(); setDeleteProbeId(null); toast.success("Probe removida"); },
+    onError: (e) => toast.error(`Erro: ${e.message}`),
+  });
+  const toggleProbeMut = trpc.linuxProbes.toggle.useMutation({
+    onSuccess: () => utils.linuxProbes.list.invalidate(),
+    onError: (e) => toast.error(`Erro: ${e.message}`),
+  });
+
   const handleOpenHistory = useCallback((target: HistoryTarget) => {
     setHistoryTarget(target);
   }, []);
 
   return (
     <div className="space-y-6">
+      {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Monitor Linux</h1>
@@ -1011,10 +1053,89 @@ export default function LinuxMonitor() {
             Monitoramento via ping por probe. Clique direito ou duplo clique no badge de status para ver o histórico.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetchProbes()}>
-          <RefreshCw className="h-4 w-4 mr-2" />Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Button size="sm" onClick={() => { setProbeForm({ name: "", sourceIp: "", operatorId: "" }); setShowAddProbe(true); }}>
+              <Plus className="h-4 w-4 mr-2" />Nova Probe
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={() => refetchProbes()}>
+            <RefreshCw className="h-4 w-4 mr-2" />Atualizar
+          </Button>
+        </div>
       </div>
+
+      {/* Modal Nova Probe */}
+      <Dialog open={showAddProbe} onOpenChange={setShowAddProbe}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Nova Probe</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label>Nome da Probe</Label>
+              <Input
+                placeholder="ex: Servidor Principal"
+                value={probeForm.name}
+                onChange={(e) => setProbeForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>IP de Origem (Loopback)</Label>
+              <Input
+                placeholder="ex: 10.0.0.1"
+                value={probeForm.sourceIp}
+                onChange={(e) => setProbeForm((f) => ({ ...f, sourceIp: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">IP do loopback que será configurado automaticamente no servidor.</p>
+            </div>
+            <div className="space-y-1">
+              <Label>Operadora</Label>
+              <Select
+                value={probeForm.operatorId}
+                onValueChange={(v) => setProbeForm((f) => ({ ...f, operatorId: v }))}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione a operadora" /></SelectTrigger>
+                <SelectContent>
+                  {operators?.map((op) => (
+                    <SelectItem key={op.id} value={String(op.id)}>{op.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddProbe(false)}>Cancelar</Button>
+            <Button
+              disabled={!probeForm.name || !probeForm.sourceIp || !probeForm.operatorId || addProbeMut.isPending}
+              onClick={() => addProbeMut.mutate({
+                name: probeForm.name,
+                sourceIp: probeForm.sourceIp,
+                operatorId: Number(probeForm.operatorId),
+              })}
+            >
+              {addProbeMut.isPending ? "Salvando..." : "Adicionar Probe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete probe */}
+      <AlertDialog open={deleteProbeId !== null} onOpenChange={(o) => { if (!o) setDeleteProbeId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover probe?</AlertDialogTitle>
+            <AlertDialogDescription>Todos os destinos e métricas desta probe serão removidos permanentemente.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteProbeId !== null && removeProbeMut.mutate({ id: deleteProbeId })}
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {probesLoading && (
         <div className="text-center py-12 text-muted-foreground">
@@ -1028,6 +1149,11 @@ export default function LinuxMonitor() {
           <CardContent className="py-12 text-center">
             <Server className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-50" />
             <p className="text-muted-foreground">Nenhuma probe configurada.</p>
+            {isAdmin && (
+              <Button size="sm" className="mt-4" onClick={() => { setProbeForm({ name: "", sourceIp: "", operatorId: "" }); setShowAddProbe(true); }}>
+                <Plus className="h-4 w-4 mr-2" />Adicionar primeira probe
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1039,6 +1165,8 @@ export default function LinuxMonitor() {
           colorIndex={idx}
           isAdmin={isAdmin}
           onOpenHistory={handleOpenHistory}
+          onDeleteProbe={isAdmin ? (id) => setDeleteProbeId(id) : undefined}
+          onToggleProbe={isAdmin ? (id, active) => toggleProbeMut.mutate({ id, active }) : undefined}
         />
       ))}
 
@@ -1047,8 +1175,6 @@ export default function LinuxMonitor() {
         target={historyTarget}
         onClose={() => setHistoryTarget(null)}
         onEdit={() => {
-          // History sheet will show the edit button which triggers openEdit inside ProbeSection
-          // For now, close history and let user click edit in the row
           setHistoryTarget(null);
           toast.info("Use o botão de editar na linha do destino para editar.");
         }}
