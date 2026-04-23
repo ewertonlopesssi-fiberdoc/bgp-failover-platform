@@ -5,8 +5,15 @@
  * Uses: ping -I <sourceIp> -c <count> -W 2 -s <packetSize> -q <destination>
  * Requires: the sourceIp must be configured as a loopback address on the host.
  * Each destination has its own frequency, packet count, and packet size.
+ *
+ * Telegram notifications:
+ *  - Offline alert: sent after N consecutive failures (configurable per destination)
+ *  - Periodic "still offline": every 5 minutes with average loss and duration
+ *  - Recovery: includes total incident duration and average loss during the incident
+ *  - Threshold breach: sent when latency/loss exceeds configured limits
+ *  - Periodic "still degraded": every 5 minutes with average latency/loss and duration
+ *  - Threshold normalized: includes duration and averages during the degradation period
  */
-
 import { exec } from "child_process";
 import { promisify } from "util";
 import { drizzle } from "drizzle-orm/mysql2";
@@ -78,7 +85,6 @@ async function runPing(
   packetSize = 32
 ): Promise<PingResult> {
   try {
-    // -I: source interface/IP, -c: count, -W: timeout per probe (secs), -s: packet size, -q: quiet
     const { stdout } = await execAsync(
       `ping -I ${sourceIp} -c ${count} -W 2 -s ${packetSize} -q ${destination} 2>&1`,
       { timeout: (count + 2) * 3000 }
@@ -107,6 +113,40 @@ const alertSent = new Map<number, boolean>();
 // Whether a threshold alert has already been sent
 const thresholdAlertSent = new Map<number, boolean>();
 
+// Incident state: tracks start time, samples, and last periodic notification
+interface IncidentState {
+  startedAt: number;           // timestamp ms when incident began
+  lossSamples: number[];       // packet loss % samples during incident
+  latencySamples: number[];    // latency ms samples during incident
+  lastNotifiedMinute: number;  // last 5-min mark at which periodic notification was sent
+}
+
+const offlineIncident = new Map<number, IncidentState>();
+const thresholdIncident = new Map<number, IncidentState>();
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatDuration(ms: number): string {
+  const totalSecs = Math.floor(ms / 1000);
+  if (totalSecs < 60) return `${totalSecs} segundo${totalSecs !== 1 ? "s" : ""}`;
+  const mins = Math.floor(totalSecs / 60);
+  if (mins < 60) return `${mins} minuto${mins !== 1 ? "s" : ""}`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs}h ${remMins}min` : `${hrs} hora${hrs !== 1 ? "s" : ""}`;
+}
+
+function avg(arr: number[]): number {
+  if (!arr.length) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+function ptDate(ts: number): string {
+  return new Date(ts).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+}
+
+// ── Alert handler ──────────────────────────────────────────────────────────
+
 async function handleAlerts(
   dest: {
     id: number;
@@ -121,6 +161,7 @@ async function handleAlerts(
 ) {
   const isOffline = result.packetLoss >= 100;
   const currentFailures = failureCount.get(dest.id) ?? 0;
+  const now = Date.now();
 
   // ── Offline alert ──────────────────────────────────────────────────────
   if (dest.offlineAlert !== "never") {
@@ -130,61 +171,168 @@ async function handleAlerts(
       const newCount = currentFailures + 1;
       failureCount.set(dest.id, newCount);
 
+      // Start or update incident tracking
+      if (!offlineIncident.has(dest.id)) {
+        offlineIncident.set(dest.id, {
+          startedAt: now,
+          lossSamples: [result.packetLoss],
+          latencySamples: [],
+          lastNotifiedMinute: 0,
+        });
+      } else {
+        offlineIncident.get(dest.id)!.lossSamples.push(result.packetLoss);
+      }
+
+      const inc = offlineIncident.get(dest.id)!;
+
+      // Initial offline alert (fires exactly when consecutive count reaches threshold)
       if (newCount === threshold && !alertSent.get(dest.id)) {
         alertSent.set(dest.id, true);
         const msg =
-          `\u{1F534} *Monitor Linux \u2014 Destino OFFLINE*\n\n` +
-          `\u{1F4CD} Probe: *${probeName}*\n` +
-          `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-          `\u274C Falhas consecutivas: *${newCount}*\n` +
-          `\u{1F4CA} Perda de pacotes: *${result.packetLoss}%*\n` +
-          `\u23F1 Lat\u00eancia: *${result.latencyMs}ms*`;
+          `🔴 *Monitor Linux — Destino OFFLINE*\n\n` +
+          `📍 Probe: *${probeName}*\n` +
+          `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+          `❌ Falhas consecutivas: *${newCount}*\n` +
+          `📊 Perda de pacotes: *${result.packetLoss}%*\n` +
+          `🕐 Início do incidente: *${ptDate(inc.startedAt)}*`;
         await sendTelegramMessage(msg);
-        console.log(`[LinuxMonitor] Alerta Telegram: ${dest.name} offline ap\u00f3s ${newCount} falhas`);
+        console.log(`[LinuxMonitor] Alerta Telegram: ${dest.name} offline após ${newCount} falhas`);
+      }
+
+      // Periodic "still offline" notification every 5 minutes
+      if (alertSent.get(dest.id)) {
+        const elapsedMs = now - inc.startedAt;
+        const elapsedMinutes = Math.floor(elapsedMs / 60000);
+        const minuteMark = Math.floor(elapsedMinutes / 5) * 5;
+        if (minuteMark > 0 && minuteMark !== inc.lastNotifiedMinute) {
+          inc.lastNotifiedMinute = minuteMark;
+          const avgLoss = avg(inc.lossSamples).toFixed(1);
+          const msg =
+            `🔴 *Monitor Linux — Destino ainda OFFLINE*\n\n` +
+            `📍 Probe: *${probeName}*\n` +
+            `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+            `⏳ Offline há: *${formatDuration(elapsedMs)}*\n` +
+            `📊 Perda média no período: *${avgLoss}%*\n` +
+            `🕐 Início: *${ptDate(inc.startedAt)}*`;
+          await sendTelegramMessage(msg);
+          console.log(`[LinuxMonitor] Notif. periódica: ${dest.name} offline há ${formatDuration(elapsedMs)}, perda média ${avgLoss}%`);
+        }
       }
     } else {
+      // Destination recovered
       if (alertSent.get(dest.id)) {
         alertSent.set(dest.id, false);
+        const inc = offlineIncident.get(dest.id);
+        const durationStr = inc ? formatDuration(now - inc.startedAt) : "desconhecido";
+        const avgLoss = inc ? avg(inc.lossSamples).toFixed(1) : "?";
         const msg =
-          `\u{1F7E2} *Monitor Linux \u2014 Destino RECUPERADO*\n\n` +
-          `\u{1F4CD} Probe: *${probeName}*\n` +
-          `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-          `\u2705 Destino voltou ao normal\n` +
-          `\u{1F4CA} Perda: *${result.packetLoss}%* | Lat\u00eancia: *${result.latencyMs}ms*`;
+          `🟢 *Monitor Linux — Destino RECUPERADO*\n\n` +
+          `📍 Probe: *${probeName}*\n` +
+          `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+          `✅ Destino voltou ao normal\n` +
+          `⏱ Duração do incidente: *${durationStr}*\n` +
+          `📊 Perda média durante o incidente: *${avgLoss}%*\n` +
+          `📈 Valores atuais: latência *${result.latencyMs}ms* | perda *${result.packetLoss}%*`;
         await sendTelegramMessage(msg);
-        console.log(`[LinuxMonitor] Recupera\u00e7\u00e3o: ${dest.name}`);
+        console.log(`[LinuxMonitor] Recuperação: ${dest.name} após ${durationStr} (perda média ${avgLoss}%)`);
       }
+      offlineIncident.delete(dest.id);
       failureCount.set(dest.id, 0);
     }
   } else {
-    failureCount.set(dest.id, isOffline ? currentFailures + 1 : 0);
+    // offlineAlert === "never": still track incident for potential future use
+    if (isOffline) {
+      failureCount.set(dest.id, currentFailures + 1);
+      if (!offlineIncident.has(dest.id)) {
+        offlineIncident.set(dest.id, { startedAt: now, lossSamples: [result.packetLoss], latencySamples: [], lastNotifiedMinute: 0 });
+      } else {
+        offlineIncident.get(dest.id)!.lossSamples.push(result.packetLoss);
+      }
+    } else {
+      offlineIncident.delete(dest.id);
+      failureCount.set(dest.id, 0);
+    }
   }
 
   // ── Latency/loss threshold alert ───────────────────────────────────────
   if (!isOffline) {
     const latencyExceeded = dest.latencyThreshold > 0 && result.latencyMs > dest.latencyThreshold;
     const lossExceeded = dest.lossThreshold > 0 && result.packetLoss > dest.lossThreshold;
+    const thresholdBreached = latencyExceeded || lossExceeded;
 
-    if ((latencyExceeded || lossExceeded) && !thresholdAlertSent.get(dest.id)) {
-      thresholdAlertSent.set(dest.id, true);
-      const reasons: string[] = [];
-      if (latencyExceeded) reasons.push(`Lat\u00eancia *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*`);
-      if (lossExceeded) reasons.push(`Perda *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*`);
-      const msg =
-        `\u26A0\uFE0F *Monitor Linux \u2014 Limiar Excedido*\n\n` +
-        `\u{1F4CD} Probe: *${probeName}*\n` +
-        `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-        reasons.map(r => `\u2022 ${r}`).join("\n");
-      await sendTelegramMessage(msg);
-      console.log(`[LinuxMonitor] Alerta de limiar: ${dest.name}`);
-    } else if (!latencyExceeded && !lossExceeded && thresholdAlertSent.get(dest.id)) {
+    if (thresholdBreached) {
+      // Start or update threshold incident tracking
+      if (!thresholdIncident.has(dest.id)) {
+        thresholdIncident.set(dest.id, {
+          startedAt: now,
+          lossSamples: [result.packetLoss],
+          latencySamples: [result.latencyMs],
+          lastNotifiedMinute: 0,
+        });
+      } else {
+        const inc = thresholdIncident.get(dest.id)!;
+        inc.lossSamples.push(result.packetLoss);
+        inc.latencySamples.push(result.latencyMs);
+      }
+
+      const inc = thresholdIncident.get(dest.id)!;
+
+      if (!thresholdAlertSent.get(dest.id)) {
+        // Initial threshold alert
+        thresholdAlertSent.set(dest.id, true);
+        const reasons: string[] = [];
+        if (latencyExceeded) reasons.push(`Latência *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*`);
+        if (lossExceeded) reasons.push(`Perda *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*`);
+        const msg =
+          `⚠️ *Monitor Linux — Limiar Excedido*\n\n` +
+          `📍 Probe: *${probeName}*\n` +
+          `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+          reasons.map(r => `• ${r}`).join("\n") + "\n" +
+          `🕐 Início: *${ptDate(inc.startedAt)}*`;
+        await sendTelegramMessage(msg);
+        console.log(`[LinuxMonitor] Alerta de limiar: ${dest.name}`);
+      } else {
+        // Periodic "still degraded" notification every 5 minutes
+        const elapsedMs = now - inc.startedAt;
+        const elapsedMinutes = Math.floor(elapsedMs / 60000);
+        const minuteMark = Math.floor(elapsedMinutes / 5) * 5;
+        if (minuteMark > 0 && minuteMark !== inc.lastNotifiedMinute) {
+          inc.lastNotifiedMinute = minuteMark;
+          const avgLoss = avg(inc.lossSamples).toFixed(1);
+          const avgLat = avg(inc.latencySamples).toFixed(1);
+          const parts: string[] = [];
+          if (dest.lossThreshold > 0) parts.push(`perda média *${avgLoss}%* (limiar: ${dest.lossThreshold}%)`);
+          if (dest.latencyThreshold > 0) parts.push(`latência média *${avgLat}ms* (limiar: ${dest.latencyThreshold}ms)`);
+          const msg =
+            `⚠️ *Monitor Linux — Degradação persistente*\n\n` +
+            `📍 Probe: *${probeName}*\n` +
+            `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+            `⏳ Degradado há: *${formatDuration(elapsedMs)}*\n` +
+            (parts.length ? `📊 ${parts.join(" | ")}\n` : "") +
+            `🕐 Início: *${ptDate(inc.startedAt)}*`;
+          await sendTelegramMessage(msg);
+          console.log(`[LinuxMonitor] Notif. periódica limiar: ${dest.name} degradado há ${formatDuration(elapsedMs)}`);
+        }
+      }
+    } else if (!thresholdBreached && thresholdAlertSent.get(dest.id)) {
+      // Threshold normalized — send enriched recovery message
       thresholdAlertSent.set(dest.id, false);
+      const inc = thresholdIncident.get(dest.id);
+      const durationStr = inc ? formatDuration(now - inc.startedAt) : "desconhecido";
+      const avgLoss = inc?.lossSamples.length ? avg(inc.lossSamples).toFixed(1) : null;
+      const avgLat = inc?.latencySamples.length ? avg(inc.latencySamples).toFixed(1) : null;
       const msg =
-        `\u2705 *Monitor Linux \u2014 Limiar Normalizado*\n\n` +
-        `\u{1F4CD} Probe: *${probeName}*\n` +
-        `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-        `\u{1F4CA} Perda: *${result.packetLoss}%* | Lat\u00eancia: *${result.latencyMs}ms*`;
+        `✅ *Monitor Linux — Limiar Normalizado*\n\n` +
+        `📍 Probe: *${probeName}*\n` +
+        `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+        `✅ Métricas voltaram ao normal\n` +
+        `⏱ Duração da degradação: *${durationStr}*\n` +
+        (avgLoss !== null ? `📊 Perda média no período: *${avgLoss}%*\n` : "") +
+        (avgLat !== null ? `📈 Latência média no período: *${avgLat}ms*\n` : "") +
+        `📉 Valores atuais: perda *${result.packetLoss}%* | latência *${result.latencyMs}ms*`;
       await sendTelegramMessage(msg);
+      console.log(`[LinuxMonitor] Limiar normalizado: ${dest.name} após ${durationStr}`);
+      thresholdIncident.delete(dest.id);
     }
   }
 }
@@ -200,48 +348,34 @@ const lastRunMap = new Map<number, number>();
 export async function runLinuxMonitorCycle() {
   const db = getDb();
   if (!db) return;
-
   try {
     const probes = await db
       .select()
       .from(linuxProbes)
       .where(eq(linuxProbes.active, true));
-
     if (probes.length === 0) return;
-
     const now = Date.now();
-
     for (const probe of probes) {
-      // Get independent destinations for this probe
       const dests = await db
         .select()
         .from(linuxDestinations)
         .where(and(eq(linuxDestinations.probeId, probe.id), eq(linuxDestinations.active, true)));
-
-      if (dests.length === 0) {
-        continue;
-      }
-
+      if (dests.length === 0) continue;
       for (const dest of dests) {
-        // Check if it's time to run this destination based on its individual frequency
         const lastRun = lastRunMap.get(dest.id) ?? 0;
         const freqMs = dest.frequency * 1000;
         if (now - lastRun < freqMs) continue;
-
         lastRunMap.set(dest.id, now);
         const result = await runPing(probe.sourceIp, dest.host, dest.packetCount, dest.packetSize);
         console.log(
           `[LinuxMonitor] ${probe.name} → ${dest.name} (${dest.host}): RTT=${result.latencyMs}ms, perda=${result.packetLoss}%`
         );
-
         await addLinuxDestMetric({
           destinationId: dest.id,
           probeId: probe.id,
           latencyMs: result.latencyMs,
           packetLoss: result.packetLoss,
         });
-
-        // Handle Telegram alerts per destination
         await handleAlerts(
           {
             id: dest.id,
@@ -265,7 +399,6 @@ export function startLinuxMonitor(intervalSeconds = 10) {
   if (monitorInterval) return;
   isRunning = true;
   console.log(`[LinuxMonitor] Iniciando com ciclo de verificação de ${intervalSeconds}s`);
-  // Run immediately then on interval (short interval to check individual frequencies)
   runLinuxMonitorCycle();
   monitorInterval = setInterval(runLinuxMonitorCycle, intervalSeconds * 1000);
 }

@@ -100,3 +100,12 @@
 - [x] Anotações de eventos no gráfico (ex: marcador quando perda > 0 começa)
 - [x] Botão de fechar o histórico retornando à tela geral sem perder estado
 - [x] Deploy em produção
+
+## Fase 9 - Monitor Linux: Notificações Telegram Enriquecidas
+
+- [ ] linuxMonitor.ts: rastrear início do incidente (timestamp da primeira falha)
+- [ ] linuxMonitor.ts: acumular amostras de perda durante o incidente para calcular média
+- [ ] linuxMonitor.ts: alerta de "perda estável" — notificar quando perda persistir por X minutos com média Y%
+- [ ] linuxMonitor.ts: alerta de recuperação com duração total do incidente e média de perda durante o período
+- [ ] linuxMonitor.ts: alerta de limiar de latência com duração e média de latência durante o período
+- [ ] Deploy em produção
