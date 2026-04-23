@@ -83,12 +83,20 @@
 
 ## Fase 7 - Monitor Linux: Alertas Telegram + Status em Tempo Real
 
-- [ ] Schema: adicionar campos offlineConsecutive, latencyThreshold, lossThreshold na tabela linux_destinations
-- [ ] Migração SQL em produção para novos campos
-- [ ] linuxMonitor.ts: lógica de contagem consecutiva de falhas e disparo de alerta Telegram
-- [ ] linuxMonitor.ts: alerta por limiar de latência e perda por destino
-- [ ] linuxMonitor.ts: alerta de recuperação quando destino volta ao normal
-- [ ] Router tRPC: expor novos campos de alerta no linuxDestinations (create/update)
-- [ ] LinuxMonitor.tsx: indicador de status em tempo real (badge latência/perda por destino)
-- [ ] LinuxMonitor.tsx: formulário de edição com campos de alerta Telegram expandidos
-- [ ] Deploy em produção
+- [x] Schema: adicionar campos offlineAlert (enum 1/2/3/5/never), latencyThreshold, lossThreshold na tabela linux_destinations
+- [x] Migração SQL em produção para novos campos
+- [x] linuxMonitor.ts: lógica de contagem consecutiva de falhas e disparo de alerta Telegram
+- [x] linuxMonitor.ts: alerta por limiar de latência e perda por destino
+- [x] linuxMonitor.ts: alerta de recuperação quando destino volta ao normal
+- [x] Router tRPC: expor novos campos de alerta no linuxDestinations (create/update)
+- [x] LinuxMonitor.tsx: indicador de status em tempo real (badge latência/perda por destino)
+- [x] LinuxMonitor.tsx: formulário de edição com campos de alerta Telegram expandidos
+- [x] Deploy em produção
+
+## Fase 8 - Monitor Linux: Menu de Contexto no Badge + Histórico
+
+- [x] Badge de status com menu de contexto (clique direito ou duplo clique): opções "Editar destino" e "Ver histórico"
+- [x] Drawer/painel de histórico com gráfico de latência e perda ao longo do tempo (identificar início das perdas)
+- [x] Anotações de eventos no gráfico (ex: marcador quando perda > 0 começa)
+- [x] Botão de fechar o histórico retornando à tela geral sem perder estado
+- [x] Deploy em produção
