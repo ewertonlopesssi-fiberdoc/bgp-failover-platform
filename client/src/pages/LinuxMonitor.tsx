@@ -554,12 +554,14 @@ function DestGridCard({
   probeId,
   onOpenHistory,
   onOpenEdit,
+  onDeleteDest,
   isAdmin,
 }: {
   dest: any;
   probeId: number;
   onOpenHistory: (target: HistoryTarget) => void;
   onOpenEdit: (dest: any) => void;
+  onDeleteDest?: (id: number) => void;
   isAdmin: boolean;
 }) {
   const { data: metrics } = trpc.linuxDestinations.metrics.useQuery(
@@ -662,6 +664,15 @@ function DestGridCard({
               <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
               Editar destino
             </ContextMenuItem>
+            {onDeleteDest && (
+              <ContextMenuItem
+                onClick={() => onDeleteDest(dest.id)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Remover destino
+              </ContextMenuItem>
+            )}
           </>
         )}
       </ContextMenuContent>
@@ -997,6 +1008,7 @@ function ProbeSection({
                   probeId={probe.id}
                   onOpenHistory={onOpenHistory}
                   onOpenEdit={openEdit}
+                  onDeleteDest={isAdmin ? (id) => setDeleteDestId(id) : undefined}
                   isAdmin={isAdmin}
                 />
               ))}

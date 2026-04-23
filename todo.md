@@ -119,9 +119,13 @@
 - [x] Deploy em produção
 
 ## Fase 11 - Monitor Linux: Grade Compacta de Destinos
-- [ ] LinuxMonitor.tsx: modo grade compacta de cards coloridos por status (verde/amarelo/vermelho)
-- [ ] Cards exibem latência/perda em destaque e nome do destino abaixo
-- [ ] Clique direito no card abre menu de contexto (Editar, Histórico, Remover)
-- [ ] Duplo clique abre histórico diretamente
-- [ ] Toggle entre modo grade e modo tabela
-- [ ] Deploy em produção
+- [x] LinuxMonitor.tsx: modo grade compacta de cards coloridos por status (verde/amarelo/vermelho)
+- [x] Cards exibem latência/perda em destaque e nome do destino abaixo
+- [x] Clique direito no card abre menu de contexto (Editar, Histórico)
+- [x] Duplo clique abre histórico diretamente
+- [x] Toggle entre modo grade e modo tabela
+- [x] Deploy em produção
+
+## Fase 11 - Correções Pendentes
+- [x] Adicionar ação 'Remover' no menu de contexto dos cards da grade compacta (com confirmação)
+- [x] Corrigir erro de runtime do LinuxMonitor em produção (query linux_probes — era apenas no dev server local, produção OK)
