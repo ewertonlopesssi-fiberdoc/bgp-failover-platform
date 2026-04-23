@@ -414,7 +414,9 @@ export async function createLinuxDestination(data: {
   packetSize?: number;
   packetCount?: number;
   frequency?: number;
-  offlineAlert?: "never" | "always" | "threshold";
+  offlineAlert?: "never" | "1" | "2" | "3" | "5";
+  latencyThreshold?: number;
+  lossThreshold?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -425,19 +427,22 @@ export async function createLinuxDestination(data: {
     packetSize: data.packetSize ?? 32,
     packetCount: data.packetCount ?? 5,
     frequency: data.frequency ?? 30,
-    offlineAlert: data.offlineAlert ?? "threshold",
+    offlineAlert: data.offlineAlert ?? "never",
+    latencyThreshold: data.latencyThreshold ?? 0,
+    lossThreshold: data.lossThreshold ?? 0,
     active: true,
   });
   return (result as any)[0]?.insertId as number;
 }
-
 export async function updateLinuxDestination(id: number, data: Partial<{
   name: string;
   host: string;
   packetSize: number;
   packetCount: number;
   frequency: number;
-  offlineAlert: "never" | "always" | "threshold";
+  offlineAlert: "never" | "1" | "2" | "3" | "5";
+  latencyThreshold: number;
+  lossThreshold: number;
   active: boolean;
 }>) {
   const db = await getDb();

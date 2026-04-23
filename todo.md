@@ -80,3 +80,15 @@
 - [x] Frontend: modal de criação/edição com todos os campos
 - [x] Frontend: listagem de destinos por probe com gráficos de latência/perda por destino
 - [x] Deploy em produção
+
+## Fase 7 - Monitor Linux: Alertas Telegram + Status em Tempo Real
+
+- [ ] Schema: adicionar campos offlineConsecutive, latencyThreshold, lossThreshold na tabela linux_destinations
+- [ ] Migração SQL em produção para novos campos
+- [ ] linuxMonitor.ts: lógica de contagem consecutiva de falhas e disparo de alerta Telegram
+- [ ] linuxMonitor.ts: alerta por limiar de latência e perda por destino
+- [ ] linuxMonitor.ts: alerta de recuperação quando destino volta ao normal
+- [ ] Router tRPC: expor novos campos de alerta no linuxDestinations (create/update)
+- [ ] LinuxMonitor.tsx: indicador de status em tempo real (badge latência/perda por destino)
+- [ ] LinuxMonitor.tsx: formulário de edição com campos de alerta Telegram expandidos
+- [ ] Deploy em produção

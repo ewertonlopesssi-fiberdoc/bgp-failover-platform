@@ -13,6 +13,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import { eq, and } from "drizzle-orm";
 import { linuxProbes, linuxDestinations } from "../drizzle/schema";
 import { addLinuxDestMetric } from "./db";
+import { sendTelegramMessage } from "./telegram";
 
 const execAsync = promisify(exec);
 
@@ -97,6 +98,97 @@ async function runPing(
   }
 }
 
+// ── Alert state tracking ───────────────────────────────────────────────────
+
+// Consecutive failure counter per destination
+const failureCount = new Map<number, number>();
+// Whether an offline alert has already been sent (to avoid spam)
+const alertSent = new Map<number, boolean>();
+// Whether a threshold alert has already been sent
+const thresholdAlertSent = new Map<number, boolean>();
+
+async function handleAlerts(
+  dest: {
+    id: number;
+    name: string;
+    host: string;
+    offlineAlert: string;
+    latencyThreshold: number;
+    lossThreshold: number;
+  },
+  probeName: string,
+  result: PingResult
+) {
+  const isOffline = result.packetLoss >= 100;
+  const currentFailures = failureCount.get(dest.id) ?? 0;
+
+  // ── Offline alert ──────────────────────────────────────────────────────
+  if (dest.offlineAlert !== "never") {
+    const threshold = parseInt(dest.offlineAlert, 10); // 1, 2, 3 or 5
+
+    if (isOffline) {
+      const newCount = currentFailures + 1;
+      failureCount.set(dest.id, newCount);
+
+      if (newCount === threshold && !alertSent.get(dest.id)) {
+        alertSent.set(dest.id, true);
+        const msg =
+          `\u{1F534} *Monitor Linux \u2014 Destino OFFLINE*\n\n` +
+          `\u{1F4CD} Probe: *${probeName}*\n` +
+          `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+          `\u274C Falhas consecutivas: *${newCount}*\n` +
+          `\u{1F4CA} Perda de pacotes: *${result.packetLoss}%*\n` +
+          `\u23F1 Lat\u00eancia: *${result.latencyMs}ms*`;
+        await sendTelegramMessage(msg);
+        console.log(`[LinuxMonitor] Alerta Telegram: ${dest.name} offline ap\u00f3s ${newCount} falhas`);
+      }
+    } else {
+      if (alertSent.get(dest.id)) {
+        alertSent.set(dest.id, false);
+        const msg =
+          `\u{1F7E2} *Monitor Linux \u2014 Destino RECUPERADO*\n\n` +
+          `\u{1F4CD} Probe: *${probeName}*\n` +
+          `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+          `\u2705 Destino voltou ao normal\n` +
+          `\u{1F4CA} Perda: *${result.packetLoss}%* | Lat\u00eancia: *${result.latencyMs}ms*`;
+        await sendTelegramMessage(msg);
+        console.log(`[LinuxMonitor] Recupera\u00e7\u00e3o: ${dest.name}`);
+      }
+      failureCount.set(dest.id, 0);
+    }
+  } else {
+    failureCount.set(dest.id, isOffline ? currentFailures + 1 : 0);
+  }
+
+  // ── Latency/loss threshold alert ───────────────────────────────────────
+  if (!isOffline) {
+    const latencyExceeded = dest.latencyThreshold > 0 && result.latencyMs > dest.latencyThreshold;
+    const lossExceeded = dest.lossThreshold > 0 && result.packetLoss > dest.lossThreshold;
+
+    if ((latencyExceeded || lossExceeded) && !thresholdAlertSent.get(dest.id)) {
+      thresholdAlertSent.set(dest.id, true);
+      const reasons: string[] = [];
+      if (latencyExceeded) reasons.push(`Lat\u00eancia *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*`);
+      if (lossExceeded) reasons.push(`Perda *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*`);
+      const msg =
+        `\u26A0\uFE0F *Monitor Linux \u2014 Limiar Excedido*\n\n` +
+        `\u{1F4CD} Probe: *${probeName}*\n` +
+        `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+        reasons.map(r => `\u2022 ${r}`).join("\n");
+      await sendTelegramMessage(msg);
+      console.log(`[LinuxMonitor] Alerta de limiar: ${dest.name}`);
+    } else if (!latencyExceeded && !lossExceeded && thresholdAlertSent.get(dest.id)) {
+      thresholdAlertSent.set(dest.id, false);
+      const msg =
+        `\u2705 *Monitor Linux \u2014 Limiar Normalizado*\n\n` +
+        `\u{1F4CD} Probe: *${probeName}*\n` +
+        `\u{1F3AF} Destino: *${dest.name}* (\`${dest.host}\`)\n` +
+        `\u{1F4CA} Perda: *${result.packetLoss}%* | Lat\u00eancia: *${result.latencyMs}ms*`;
+      await sendTelegramMessage(msg);
+    }
+  }
+}
+
 // ── Monitor cycle ──────────────────────────────────────────────────────────
 
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
@@ -148,6 +240,20 @@ export async function runLinuxMonitorCycle() {
           latencyMs: result.latencyMs,
           packetLoss: result.packetLoss,
         });
+
+        // Handle Telegram alerts per destination
+        await handleAlerts(
+          {
+            id: dest.id,
+            name: dest.name,
+            host: dest.host,
+            offlineAlert: dest.offlineAlert,
+            latencyThreshold: dest.latencyThreshold,
+            lossThreshold: dest.lossThreshold,
+          },
+          probe.name,
+          result
+        );
       }
     }
   } catch (err: any) {

@@ -596,7 +596,9 @@ export const appRouter = router({
         packetSize: z.number().int().min(1).max(65507).default(32),
         packetCount: z.number().int().min(1).max(100).default(5),
         frequency: z.number().int().min(5).max(86400).default(30),
-        offlineAlert: z.enum(["never", "always", "threshold"]).default("never"),
+        offlineAlert: z.enum(["never", "1", "2", "3", "5"]).default("never"),
+        latencyThreshold: z.number().int().min(0).max(10000).default(0),
+        lossThreshold: z.number().int().min(0).max(100).default(0),
       }))
       .mutation(async ({ input }) => {
         const dest = await db.createLinuxDestination(input);
@@ -616,7 +618,9 @@ export const appRouter = router({
         packetSize: z.number().int().min(1).max(65507).optional(),
         packetCount: z.number().int().min(1).max(100).optional(),
         frequency: z.number().int().min(5).max(86400).optional(),
-        offlineAlert: z.enum(["never", "always", "threshold"]).optional(),
+        offlineAlert: z.enum(["never", "1", "2", "3", "5"]).optional(),
+        latencyThreshold: z.number().int().min(0).max(10000).optional(),
+        lossThreshold: z.number().int().min(0).max(100).optional(),
         active: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {

@@ -50,10 +50,14 @@ import {
   ChevronUp,
   Activity,
   Server,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+type OfflineAlert = "never" | "1" | "2" | "3" | "5";
 
 interface DestinationForm {
   probeId: number;
@@ -62,32 +66,96 @@ interface DestinationForm {
   packetSize: number;
   packetCount: number;
   frequency: number;
-  offlineAlert: "never" | "always" | "threshold";
+  offlineAlert: OfflineAlert;
+  latencyThreshold: number;
+  lossThreshold: number;
 }
 
-const OFFLINE_ALERT_LABELS: Record<string, string> = {
-  never: "Nunca",
-  always: "Sempre",
-  threshold: "Por limiar",
-};
+const OFFLINE_ALERT_OPTIONS: { value: OfflineAlert; label: string }[] = [
+  { value: "never", label: "nunca (sem alertas)" },
+  { value: "1", label: "imediatamente após falhar!" },
+  { value: "2", label: "se falhar duas vezes seguida" },
+  { value: "3", label: "se falhar três vezes seguidas" },
+  { value: "5", label: "se falhar cinco vezes seguidas" },
+];
 
 const CHART_COLORS = [
   "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
   "#06b6d4", "#f97316", "#84cc16", "#ec4899", "#14b8a6",
 ];
 
+// ── Status badge from recent metrics ──────────────────────────────────────
+
+function DestStatusBadge({
+  destinationId,
+  probeId,
+}: {
+  destinationId: number;
+  probeId: number;
+}) {
+  const { data: metrics } = trpc.linuxDestinations.metrics.useQuery(
+    { destinationId, probeId, hours: 1 },
+    { refetchInterval: 15000, staleTime: 10000 }
+  );
+
+  const status = useMemo(() => {
+    if (!metrics || metrics.length === 0) return null;
+    const latest = metrics[0]; // newest first
+    const latency = latest.latencyMs;
+    const loss = latest.packetLoss;
+    return { latency, loss };
+  }, [metrics]);
+
+  if (!status) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground font-mono">
+        <span className="w-2 h-2 rounded-full bg-muted-foreground/40 inline-block" />
+        sem dados
+      </span>
+    );
+  }
+
+  const isOffline = status.loss >= 100;
+  const isDegraded = !isOffline && (status.loss > 10 || status.latency > 200);
+
+  const color = isOffline
+    ? "bg-red-500"
+    : isDegraded
+    ? "bg-yellow-400"
+    : "bg-green-500";
+
+  const textColor = isOffline
+    ? "text-red-400"
+    : isDegraded
+    ? "text-yellow-400"
+    : "text-green-400";
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium ${textColor} bg-black/20 rounded px-1.5 py-0.5 border border-current/20`}
+    >
+      <span className={`w-2 h-2 rounded-full inline-block ${color}`} />
+      {isOffline
+        ? "offline"
+        : `${status.latency.toFixed(1)} ms / ${status.loss.toFixed(0)}%`}
+    </span>
+  );
+}
+
 // ── Destination metrics chart ──────────────────────────────────────────────
 
 function DestMetricsChart({
   destinationId,
+  probeId,
   destName,
 }: {
   destinationId: number;
+  probeId: number;
   destName: string;
 }) {
   const [hours, setHours] = useState(6);
   const { data: metrics, isLoading } = trpc.linuxDestinations.metrics.useQuery(
-    { destinationId, hours },
+    { destinationId, probeId, hours },
     { refetchInterval: 30000 }
   );
 
@@ -170,10 +238,7 @@ function DestMetricsChart({
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#9ca3af" }} />
-            <YAxis
-              tick={{ fontSize: 10, fill: "#9ca3af" }}
-              domain={[0, 100]}
-            />
+            <YAxis tick={{ fontSize: 10, fill: "#9ca3af" }} domain={[0, 100]} />
             <Tooltip
               contentStyle={{
                 backgroundColor: "#1f2937",
@@ -209,26 +274,31 @@ function DestinationFormFields({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
+        {/* Name */}
         <div className="col-span-2">
-          <Label htmlFor="dest-name">Nome</Label>
+          <Label htmlFor="dest-name">Nome do sensor</Label>
           <Input
             id="dest-name"
-            placeholder="Ex: Google DNS"
+            placeholder="Ex: WhatsApp"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
         </div>
+
+        {/* Host */}
         <div className="col-span-2">
-          <Label htmlFor="dest-host">Host / IP</Label>
+          <Label htmlFor="dest-host">IP / Domínio</Label>
           <Input
             id="dest-host"
-            placeholder="Ex: 8.8.8.8 ou google.com"
+            placeholder="Ex: www.whatsapp.com ou 8.8.8.8"
             value={form.host}
             onChange={(e) => setForm({ ...form, host: e.target.value })}
           />
         </div>
+
+        {/* Packet size */}
         <div>
-          <Label htmlFor="dest-pktsize">Tamanho do pacote (bytes)</Label>
+          <Label htmlFor="dest-pktsize">Tam. pacote (bytes)</Label>
           <Input
             id="dest-pktsize"
             type="number"
@@ -240,6 +310,8 @@ function DestinationFormFields({
             }
           />
         </div>
+
+        {/* Packet count */}
         <div>
           <Label htmlFor="dest-pktcount">Quantidade de pacotes</Label>
           <Input
@@ -253,40 +325,102 @@ function DestinationFormFields({
             }
           />
         </div>
-        <div>
-          <Label htmlFor="dest-freq">Frequência (segundos)</Label>
-          <Input
-            id="dest-freq"
-            type="number"
-            min={5}
-            max={86400}
-            value={form.frequency}
-            onChange={(e) =>
-              setForm({ ...form, frequency: parseInt(e.target.value) || 30 })
-            }
-          />
+
+        {/* Frequency */}
+        <div className="col-span-2">
+          <Label htmlFor="dest-freq">Executar</Label>
+          <Select
+            value={String(form.frequency)}
+            onValueChange={(v) => setForm({ ...form, frequency: parseInt(v) })}
+          >
+            <SelectTrigger id="dest-freq">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">A cada 10 segundos</SelectItem>
+              <SelectItem value="30">A cada 30 segundos</SelectItem>
+              <SelectItem value="60">A cada 1 minuto</SelectItem>
+              <SelectItem value="120">A cada 2 minutos</SelectItem>
+              <SelectItem value="300">A cada 5 minutos</SelectItem>
+              <SelectItem value="600">A cada 10 minutos</SelectItem>
+              <SelectItem value="1800">A cada 30 minutos</SelectItem>
+              <SelectItem value="3600">A cada 1 hora</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div>
-          <Label htmlFor="dest-alert">Alerta offline</Label>
+
+        {/* Offline alert */}
+        <div className="col-span-2">
+          <Label htmlFor="dest-alert">Offline</Label>
           <Select
             value={form.offlineAlert}
             onValueChange={(v) =>
-              setForm({
-                ...form,
-                offlineAlert: v as DestinationForm["offlineAlert"],
-              })
+              setForm({ ...form, offlineAlert: v as OfflineAlert })
             }
           >
             <SelectTrigger id="dest-alert">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="never">Nunca</SelectItem>
-              <SelectItem value="always">Sempre</SelectItem>
-              <SelectItem value="threshold">Por limiar</SelectItem>
+              {OFFLINE_ALERT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      {/* Display settings section */}
+      <div className="border-t border-border pt-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          Configurações de Alerta por Limiar
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="dest-lat-thr">
+              Latência máx. (ms)
+              <span className="text-muted-foreground font-normal ml-1">0 = desativado</span>
+            </Label>
+            <Input
+              id="dest-lat-thr"
+              type="number"
+              min={0}
+              max={10000}
+              value={form.latencyThreshold}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  latencyThreshold: parseInt(e.target.value) || 0,
+                })
+              }
+            />
+          </div>
+          <div>
+            <Label htmlFor="dest-loss-thr">
+              Perda máx. (%)
+              <span className="text-muted-foreground font-normal ml-1">0 = desativado</span>
+            </Label>
+            <Input
+              id="dest-loss-thr"
+              type="number"
+              min={0}
+              max={100}
+              value={form.lossThreshold}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  lossThreshold: parseInt(e.target.value) || 0,
+                })
+              }
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Alertas de limiar são enviados via Telegram quando a latência ou perda de pacotes
+          ultrapassam os valores configurados acima.
+        </p>
       </div>
     </div>
   );
@@ -325,6 +459,8 @@ function ProbeSection({
     packetCount: 5,
     frequency: 30,
     offlineAlert: "never",
+    latencyThreshold: 0,
+    lossThreshold: 0,
   });
 
   const [form, setForm] = useState<DestinationForm>(makeDefaultForm);
@@ -387,7 +523,9 @@ function ProbeSection({
       packetSize: dest.packetSize,
       packetCount: dest.packetCount,
       frequency: dest.frequency,
-      offlineAlert: dest.offlineAlert,
+      offlineAlert: dest.offlineAlert as OfflineAlert,
+      latencyThreshold: dest.latencyThreshold ?? 0,
+      lossThreshold: dest.lossThreshold ?? 0,
     });
   }
 
@@ -395,6 +533,15 @@ function ProbeSection({
     setForm(makeDefaultForm());
     setShowAddModal(true);
   }
+
+  const offlineAlertLabel = (v: string) =>
+    OFFLINE_ALERT_OPTIONS.find((o) => o.value === v)?.label ?? v;
+
+  const freqLabel = (s: number) => {
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${s / 60}min`;
+    return `${s / 3600}h`;
+  };
 
   return (
     <Card className="border-border">
@@ -460,16 +607,9 @@ function ProbeSection({
           ) : !destinations?.length ? (
             <div className="text-center py-8 text-muted-foreground">
               <Server className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">
-                Nenhum destino configurado para esta probe.
-              </p>
+              <p className="text-sm">Nenhum destino configurado para esta probe.</p>
               {isAdmin && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={openAdd}
-                >
+                <Button size="sm" variant="outline" className="mt-3" onClick={openAdd}>
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   Adicionar primeiro destino
                 </Button>
@@ -480,12 +620,13 @@ function ProbeSection({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
+                    <th className="text-left py-2 px-2 text-xs text-muted-foreground font-medium">Status</th>
                     <th className="text-left py-2 px-2 text-xs text-muted-foreground font-medium">Nome</th>
                     <th className="text-left py-2 px-2 text-xs text-muted-foreground font-medium">Host/IP</th>
-                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Tam. Pkt</th>
-                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Qtd.</th>
-                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Freq. (s)</th>
-                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Alerta</th>
+                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Pkt</th>
+                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Freq.</th>
+                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Alerta Offline</th>
+                    <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Limiares</th>
                     <th className="text-center py-2 px-2 text-xs text-muted-foreground font-medium">Ativo</th>
                     <th className="text-right py-2 px-2 text-xs text-muted-foreground font-medium">Ações</th>
                   </tr>
@@ -497,15 +638,48 @@ function ProbeSection({
                         key={dest.id}
                         className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                       >
+                        {/* Real-time status */}
+                        <td className="py-2 px-2">
+                          <DestStatusBadge
+                            destinationId={dest.id}
+                            probeId={probe.id}
+                          />
+                        </td>
                         <td className="py-2 px-2 font-medium">{dest.name}</td>
                         <td className="py-2 px-2 font-mono text-xs">{dest.host}</td>
-                        <td className="py-2 px-2 text-center text-xs">{dest.packetSize}B</td>
-                        <td className="py-2 px-2 text-center text-xs">{dest.packetCount}</td>
-                        <td className="py-2 px-2 text-center text-xs">{dest.frequency}s</td>
+                        <td className="py-2 px-2 text-center text-xs">
+                          {dest.packetSize}B × {dest.packetCount}
+                        </td>
+                        <td className="py-2 px-2 text-center text-xs">
+                          {freqLabel(dest.frequency)}
+                        </td>
+                        {/* Offline alert */}
                         <td className="py-2 px-2 text-center">
-                          <Badge variant="outline" className="text-xs">
-                            {OFFLINE_ALERT_LABELS[dest.offlineAlert] ?? dest.offlineAlert}
-                          </Badge>
+                          {dest.offlineAlert === "never" ? (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <BellOff className="h-3 w-3" />
+                              nunca
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-amber-400">
+                              <Bell className="h-3 w-3" />
+                              {dest.offlineAlert === "1"
+                                ? "imediato"
+                                : `${dest.offlineAlert}× seguidas`}
+                            </span>
+                          )}
+                        </td>
+                        {/* Thresholds */}
+                        <td className="py-2 px-2 text-center text-xs text-muted-foreground">
+                          {dest.latencyThreshold > 0 || dest.lossThreshold > 0 ? (
+                            <span className="text-blue-400">
+                              {dest.latencyThreshold > 0 && `>${dest.latencyThreshold}ms`}
+                              {dest.latencyThreshold > 0 && dest.lossThreshold > 0 && " / "}
+                              {dest.lossThreshold > 0 && `>${dest.lossThreshold}%`}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/50">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-2 text-center">
                           {isAdmin ? (
@@ -564,7 +738,7 @@ function ProbeSection({
                       </tr>
                       {showCharts === dest.id && (
                         <tr key={`chart-${dest.id}`}>
-                          <td colSpan={8} className="py-3 px-4 bg-muted/20">
+                          <td colSpan={9} className="py-3 px-4 bg-muted/20">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                                 <Activity className="h-3.5 w-3.5" />
@@ -584,6 +758,7 @@ function ProbeSection({
                             </div>
                             <DestMetricsChart
                               destinationId={dest.id}
+                              probeId={probe.id}
                               destName={dest.name}
                             />
                           </td>
@@ -600,7 +775,7 @@ function ProbeSection({
 
       {/* Add destination modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Adicionar Destino — {probe.name}</DialogTitle>
           </DialogHeader>
@@ -624,7 +799,7 @@ function ProbeSection({
         open={!!editDest}
         onOpenChange={(o) => { if (!o) setEditDest(null); }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Destino</DialogTitle>
           </DialogHeader>
@@ -634,10 +809,12 @@ function ProbeSection({
               Cancelar
             </Button>
             <Button
-              onClick={() => updateMut.mutate({ id: editDest.id, ...form })}
+              onClick={() =>
+                updateMut.mutate({ id: editDest.id, ...form })
+              }
               disabled={updateMut.isPending || !form.name || !form.host}
             >
-              {updateMut.isPending ? "Salvando..." : "Salvar"}
+              {updateMut.isPending ? "Salvando..." : "Atualizar"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -717,8 +894,8 @@ export default function LinuxMonitor() {
         <div>
           <h1 className="text-2xl font-bold">Monitor Linux</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Monitoramento independente via ping por probe (IP de loopback). Cada
-            destino possui frequência e parâmetros individuais.
+            Monitoramento via ping por probe (IP de loopback). Cada destino possui
+            frequência, alertas Telegram e limiares individuais.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetchProbes()}>

@@ -172,7 +172,10 @@ export const linuxDestinations = mysqlTable("linux_destinations", {
   packetSize: int("packetSize").default(32).notNull(),   // bytes
   packetCount: int("packetCount").default(5).notNull(),  // probes per run
   frequency: int("frequency").default(30).notNull(),     // seconds between runs
-  offlineAlert: mysqlEnum("offlineAlert", ["never", "always", "threshold"]).default("threshold").notNull(),
+  // Telegram alert settings per destination
+  offlineAlert: mysqlEnum("offlineAlert", ["never", "1", "2", "3", "5"]).default("never").notNull(), // consecutive failures before alert
+  latencyThreshold: int("latencyThreshold").default(0).notNull(),   // ms, 0 = disabled
+  lossThreshold: int("lossThreshold").default(0).notNull(),          // %, 0 = disabled
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
