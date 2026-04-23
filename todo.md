@@ -34,4 +34,4 @@
 - [x] NQA: parser atualizado para suportar formato icmp (Min/Max/Average Completion Time + Lost packet ratio)
 - [x] Status: ALOO mostra Online (BGP Established + NQA icmp funcionando, RTT=3ms)
 - [x] Status: lógica de fallback corrigida (sem destinos reais = BGP determina status, não NQA)
-- [ ] BR Digital: destino 8.8.8.8 inacessível via interface 201.16.68.109 (problema de conectividade real)
+- [x] BR Digital: destino alterado para 201.16.68.108 (peer BGP), NQA funcionando RTT=6ms, perda=0%
