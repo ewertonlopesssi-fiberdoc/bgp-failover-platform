@@ -403,6 +403,14 @@ export const appRouter = router({
         await db.addLatencyMetric(input);
         return { success: true };
       }),
+    reset: adminProcedure
+      .input(z.object({
+        operatorId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const deleted = await db.clearLatencyMetrics(input.operatorId);
+        return { success: true, deleted };
+      }),
   }),
 
   // ─── Audit Logs ───────────────────────────────────────────────────────────

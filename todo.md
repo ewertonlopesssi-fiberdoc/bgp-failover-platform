@@ -35,3 +35,9 @@
 - [x] Status: ALOO mostra Online (BGP Established + NQA icmp funcionando, RTT=3ms)
 - [x] Status: lógica de fallback corrigida (sem destinos reais = BGP determina status, não NQA)
 - [x] BR Digital: destino alterado para 201.16.68.108 (peer BGP), NQA funcionando RTT=6ms, perda=0%
+
+## Fase 3 - UX / Dashboard
+- [x] Adicionar botão "Zerar métricas" no dashboard para resetar histórico de latency_metrics
+- [x] Endpoint tRPC: latency.reset implementado (DELETE em latency_metrics)
+- [x] Remover gráfico de Jitter da página de métricas
+- [x] Diferenciar cores das operadoras nos gráficos (ALOO azul, BR Digital verde)

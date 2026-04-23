@@ -318,3 +318,15 @@ export async function getClientFailoverState(clientId: number) {
   const result = await db.select().from(clientFailoverState).where(eq(clientFailoverState.clientId, clientId)).limit(1);
   return result.length > 0 ? result[0] : null;
 }
+
+// ─── Limpeza de Métricas ──────────────────────────────────────────────────────
+export async function clearLatencyMetrics(operatorId?: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  if (operatorId !== undefined) {
+    const result = await db.delete(latencyMetrics).where(eq(latencyMetrics.operatorId, operatorId));
+    return (result as any)[0]?.affectedRows ?? 0;
+  }
+  const result = await db.delete(latencyMetrics);
+  return (result as any)[0]?.affectedRows ?? 0;
+}
