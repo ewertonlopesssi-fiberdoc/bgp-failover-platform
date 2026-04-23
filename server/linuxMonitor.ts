@@ -260,6 +260,42 @@ async function handleAlerts(
     const lossExceeded = dest.lossThreshold > 0 && result.packetLoss > dest.lossThreshold;
     const thresholdBreached = latencyExceeded || lossExceeded;
 
+    // Helper functions to differentiate scenario in messages
+    const scenarioLabel = (): string => {
+      if (latencyExceeded && lossExceeded) return "Degradação Severa";
+      if (latencyExceeded) return "Latência Alta";
+      return "Perda de Pacotes";
+    };
+    const scenarioEmoji = (): string => {
+      if (latencyExceeded && lossExceeded) return "🔶";
+      if (latencyExceeded) return "🟡";
+      return "🟠";
+    };
+    const scenarioDetail = (): string => {
+      if (latencyExceeded && lossExceeded) {
+        return `📡 Latência: *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*\n` +
+               `📦 Perda: *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*\n` +
+               `💡 Diagnóstico: degradação severa (congestionamento + perda)`;
+      }
+      if (latencyExceeded) {
+        return `📡 Latência: *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*\n` +
+               `📦 Perda: *${result.packetLoss}%* (dentro do normal)\n` +
+               `💡 Diagnóstico: possível congestionamento sem perda de pacotes`;
+      }
+      return `📦 Perda: *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*\n` +
+             `📡 Latência: *${result.latencyMs}ms* (dentro do normal)\n` +
+             `💡 Diagnóstico: falha parcial de conectividade`;
+    };
+    const periodicDetail = (avgLoss: string, avgLat: string): string => {
+      if (latencyExceeded && lossExceeded) {
+        return `📊 Perda média: *${avgLoss}%* (limiar: ${dest.lossThreshold}%) | Latência média: *${avgLat}ms* (limiar: ${dest.latencyThreshold}ms)`;
+      }
+      if (latencyExceeded) {
+        return `📡 Latência média: *${avgLat}ms* (limiar: ${dest.latencyThreshold}ms) | Perda: estável em *${avgLoss}%*`;
+      }
+      return `📦 Perda média: *${avgLoss}%* (limiar: ${dest.lossThreshold}%) | Latência: estável em *${avgLat}ms*`;
+    };
+
     if (thresholdBreached) {
       // Start or update threshold incident tracking
       if (!thresholdIncident.has(dest.id)) {
@@ -274,23 +310,19 @@ async function handleAlerts(
         inc.lossSamples.push(result.packetLoss);
         inc.latencySamples.push(result.latencyMs);
       }
-
       const inc = thresholdIncident.get(dest.id)!;
 
       if (!thresholdAlertSent.get(dest.id)) {
-        // Initial threshold alert
+        // Initial threshold alert — differentiated by scenario
         thresholdAlertSent.set(dest.id, true);
-        const reasons: string[] = [];
-        if (latencyExceeded) reasons.push(`Latência *${result.latencyMs}ms* > limiar *${dest.latencyThreshold}ms*`);
-        if (lossExceeded) reasons.push(`Perda *${result.packetLoss}%* > limiar *${dest.lossThreshold}%*`);
         const msg =
-          `⚠️ *Monitor Linux — Limiar Excedido*\n\n` +
+          `${scenarioEmoji()} *Monitor Linux — ${scenarioLabel()}*\n\n` +
           `📍 Probe: *${probeName}*\n` +
           `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-          reasons.map(r => `• ${r}`).join("\n") + "\n" +
+          scenarioDetail() + "\n" +
           `🕐 Início: *${ptDate(inc.startedAt)}*`;
         await sendTelegramMessage(msg);
-        console.log(`[LinuxMonitor] Alerta de limiar: ${dest.name}`);
+        console.log(`[LinuxMonitor] Alerta de limiar (${scenarioLabel()}): ${dest.name}`);
       } else {
         // Periodic "still degraded" notification every 5 minutes
         const elapsedMs = now - inc.startedAt;
@@ -300,29 +332,26 @@ async function handleAlerts(
           inc.lastNotifiedMinute = minuteMark;
           const avgLoss = avg(inc.lossSamples).toFixed(1);
           const avgLat = avg(inc.latencySamples).toFixed(1);
-          const parts: string[] = [];
-          if (dest.lossThreshold > 0) parts.push(`perda média *${avgLoss}%* (limiar: ${dest.lossThreshold}%)`);
-          if (dest.latencyThreshold > 0) parts.push(`latência média *${avgLat}ms* (limiar: ${dest.latencyThreshold}ms)`);
           const msg =
-            `⚠️ *Monitor Linux — Degradação persistente*\n\n` +
+            `${scenarioEmoji()} *Monitor Linux — ${scenarioLabel()} persistente*\n\n` +
             `📍 Probe: *${probeName}*\n` +
             `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
-            `⏳ Degradado há: *${formatDuration(elapsedMs)}*\n` +
-            (parts.length ? `📊 ${parts.join(" | ")}\n` : "") +
+            `⏳ Há: *${formatDuration(elapsedMs)}*\n` +
+            periodicDetail(avgLoss, avgLat) + "\n" +
             `🕐 Início: *${ptDate(inc.startedAt)}*`;
           await sendTelegramMessage(msg);
-          console.log(`[LinuxMonitor] Notif. periódica limiar: ${dest.name} degradado há ${formatDuration(elapsedMs)}`);
+          console.log(`[LinuxMonitor] Notif. periódica (${scenarioLabel()}): ${dest.name} há ${formatDuration(elapsedMs)}`);
         }
       }
     } else if (!thresholdBreached && thresholdAlertSent.get(dest.id)) {
-      // Threshold normalized — send enriched recovery message
+      // Threshold normalized — enriched recovery message
       thresholdAlertSent.set(dest.id, false);
       const inc = thresholdIncident.get(dest.id);
       const durationStr = inc ? formatDuration(now - inc.startedAt) : "desconhecido";
       const avgLoss = inc?.lossSamples.length ? avg(inc.lossSamples).toFixed(1) : null;
       const avgLat = inc?.latencySamples.length ? avg(inc.latencySamples).toFixed(1) : null;
       const msg =
-        `✅ *Monitor Linux — Limiar Normalizado*\n\n` +
+        `✅ *Monitor Linux — Métricas Normalizadas*\n\n` +
         `📍 Probe: *${probeName}*\n` +
         `🎯 Destino: *${dest.name}* (\`${dest.host}\`)\n` +
         `✅ Métricas voltaram ao normal\n` +
@@ -331,7 +360,7 @@ async function handleAlerts(
         (avgLat !== null ? `📈 Latência média no período: *${avgLat}ms*\n` : "") +
         `📉 Valores atuais: perda *${result.packetLoss}%* | latência *${result.latencyMs}ms*`;
       await sendTelegramMessage(msg);
-      console.log(`[LinuxMonitor] Limiar normalizado: ${dest.name} após ${durationStr}`);
+      console.log(`[LinuxMonitor] Métricas normalizadas: ${dest.name} após ${durationStr}`);
       thresholdIncident.delete(dest.id);
     }
   }
