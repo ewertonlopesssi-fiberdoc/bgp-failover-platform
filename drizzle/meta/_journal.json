@@ -29,6 +29,13 @@
       "when": 1776962403980,
       "tag": "0003_perpetual_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1776966648946,
+      "tag": "0004_abandoned_genesis",
+      "breakpoints": true
     }
   ]
 }

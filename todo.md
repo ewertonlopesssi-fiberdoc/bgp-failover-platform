@@ -70,3 +70,13 @@
 - [x] Integrar envio de alerta quando operadora muda de status (down/degraded/recovery)
 - [x] Adicionar campos de limiar na página TelegramConfig
 - [x] Deploy em produção
+
+## Fase 6 - Monitor Linux: Destinos Independentes
+- [x] Criar tabela linux_destinations com campos: name, host, packetSize, packetCount, frequency, offlineAlert, probeId, active
+- [x] Migrar banco de dados em produção
+- [x] Funções DB: listLinuxDestinations, createLinuxDestination, updateLinuxDestination, deleteLinuxDestination
+- [x] Router tRPC: linuxDestinations (list, create, update, delete, metrics, clearMetrics)
+- [x] Atualizar linuxMonitor para usar linux_destinations em vez de destinations (frequência individual por destino)
+- [x] Frontend: modal de criação/edição com todos os campos
+- [x] Frontend: listagem de destinos por probe com gráficos de latência/perda por destino
+- [x] Deploy em produção

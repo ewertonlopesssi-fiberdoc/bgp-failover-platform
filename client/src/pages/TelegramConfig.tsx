@@ -169,7 +169,7 @@ export default function TelegramConfig() {
             </Button>
             <Button
               onClick={() => testMutation.mutate()}
-              disabled={testMutation.isPending || !config?.botToken || !config?.chatId}
+              disabled={testMutation.isPending}
               size="sm"
               variant="outline"
               className="gap-2 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"

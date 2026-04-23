@@ -1,16 +1,18 @@
 /**
  * Linux Monitor — executes ping directly on the Debian server using
- * a specific source IP (loopback) per operator, independent of Ne8000 NQA.
+ * a specific source IP (loopback) per probe, independent of Ne8000 NQA.
  *
- * Uses: ping -I <sourceIp> -c 5 -W 2 -q <destination>
+ * Uses: ping -I <sourceIp> -c <count> -W 2 -s <packetSize> -q <destination>
  * Requires: the sourceIp must be configured as a loopback address on the host.
+ * Each destination has its own frequency, packet count, and packet size.
  */
 
 import { exec } from "child_process";
 import { promisify } from "util";
 import { drizzle } from "drizzle-orm/mysql2";
-import { eq, and, gte, desc } from "drizzle-orm";
-import { linuxProbes, linuxMetrics, destinations, operators } from "../drizzle/schema";
+import { eq, and } from "drizzle-orm";
+import { linuxProbes, linuxDestinations } from "../drizzle/schema";
+import { addLinuxDestMetric } from "./db";
 
 const execAsync = promisify(exec);
 
@@ -26,7 +28,6 @@ function getDb() {
 
 export async function addLoopbackIp(ip: string): Promise<{ success: boolean; message: string }> {
   try {
-    // Check if already configured
     const { stdout: checkOut } = await execAsync(`ip addr show dev lo 2>/dev/null | grep "${ip}/32" || true`);
     if (checkOut.trim()) {
       return { success: true, message: `IP ${ip}/32 já está configurado na loopback` };
@@ -69,25 +70,24 @@ interface PingResult {
   error?: string;
 }
 
-async function runPing(sourceIp: string, destination: string, count = 5): Promise<PingResult> {
+async function runPing(
+  sourceIp: string,
+  destination: string,
+  count = 5,
+  packetSize = 32
+): Promise<PingResult> {
   try {
-    // -I: source interface/IP, -c: count, -W: timeout per probe (secs), -q: quiet
+    // -I: source interface/IP, -c: count, -W: timeout per probe (secs), -s: packet size, -q: quiet
     const { stdout } = await execAsync(
-      `ping -I ${sourceIp} -c ${count} -W 2 -q ${destination} 2>&1`,
+      `ping -I ${sourceIp} -c ${count} -W 2 -s ${packetSize} -q ${destination} 2>&1`,
       { timeout: (count + 2) * 3000 }
     );
-
-    // Parse packet loss: "5 packets transmitted, 4 received, 20% packet loss"
     const lossMatch = stdout.match(/(\d+(?:\.\d+)?)%\s+packet\s+loss/i);
     const packetLoss = lossMatch ? parseFloat(lossMatch[1]) : 100;
-
-    // Parse RTT: "rtt min/avg/max/mdev = 1.234/2.345/3.456/0.123 ms"
     const rttMatch = stdout.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*[\d.]+\/([\d.]+)\//i);
     const latencyMs = rttMatch ? parseFloat(rttMatch[1]) : 0;
-
     return { latencyMs, packetLoss, success: packetLoss < 100 };
   } catch (err: any) {
-    // ping returns exit code 1 when all packets lost — still parse output
     const output = err.stdout ?? err.message ?? "";
     const lossMatch = output.match(/(\d+(?:\.\d+)?)%\s+packet\s+loss/i);
     const packetLoss = lossMatch ? parseFloat(lossMatch[1]) : 100;
@@ -102,12 +102,14 @@ async function runPing(sourceIp: string, destination: string, count = 5): Promis
 let monitorInterval: ReturnType<typeof setInterval> | null = null;
 let isRunning = false;
 
+// Track last run time per destination for individual frequency control
+const lastRunMap = new Map<number, number>();
+
 export async function runLinuxMonitorCycle() {
   const db = getDb();
   if (!db) return;
 
   try {
-    // Get all active probes with their operators
     const probes = await db
       .select()
       .from(linuxProbes)
@@ -115,31 +117,36 @@ export async function runLinuxMonitorCycle() {
 
     if (probes.length === 0) return;
 
+    const now = Date.now();
+
     for (const probe of probes) {
-      // Get destinations for this operator
+      // Get independent destinations for this probe
       const dests = await db
         .select()
-        .from(destinations)
-        .where(and(eq(destinations.operatorId, probe.operatorId), eq(destinations.active, true)));
+        .from(linuxDestinations)
+        .where(and(eq(linuxDestinations.probeId, probe.id), eq(linuxDestinations.active, true)));
 
       if (dests.length === 0) {
-        console.log(`[LinuxMonitor] Probe ${probe.name} (${probe.sourceIp}): sem destinos configurados`);
         continue;
       }
 
       for (const dest of dests) {
-        const result = await runPing(probe.sourceIp, dest.host);
+        // Check if it's time to run this destination based on its individual frequency
+        const lastRun = lastRunMap.get(dest.id) ?? 0;
+        const freqMs = dest.frequency * 1000;
+        if (now - lastRun < freqMs) continue;
+
+        lastRunMap.set(dest.id, now);
+        const result = await runPing(probe.sourceIp, dest.host, dest.packetCount, dest.packetSize);
         console.log(
-          `[LinuxMonitor] ${probe.name} → ${dest.host}: RTT=${result.latencyMs}ms, perda=${result.packetLoss}%`
+          `[LinuxMonitor] ${probe.name} → ${dest.name} (${dest.host}): RTT=${result.latencyMs}ms, perda=${result.packetLoss}%`
         );
 
-        await db.insert(linuxMetrics).values({
-          probeId: probe.id,
-          operatorId: probe.operatorId,
+        await addLinuxDestMetric({
           destinationId: dest.id,
+          probeId: probe.id,
           latencyMs: result.latencyMs,
           packetLoss: result.packetLoss,
-          measuredAt: new Date(),
         });
       }
     }
@@ -148,11 +155,11 @@ export async function runLinuxMonitorCycle() {
   }
 }
 
-export function startLinuxMonitor(intervalSeconds = 60) {
+export function startLinuxMonitor(intervalSeconds = 10) {
   if (monitorInterval) return;
   isRunning = true;
-  console.log(`[LinuxMonitor] Iniciando com intervalo de ${intervalSeconds}s`);
-  // Run immediately then on interval
+  console.log(`[LinuxMonitor] Iniciando com ciclo de verificação de ${intervalSeconds}s`);
+  // Run immediately then on interval (short interval to check individual frequencies)
   runLinuxMonitorCycle();
   monitorInterval = setInterval(runLinuxMonitorCycle, intervalSeconds * 1000);
 }

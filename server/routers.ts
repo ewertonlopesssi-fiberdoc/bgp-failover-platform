@@ -581,5 +581,70 @@ export const appRouter = router({
         return { success: true, deleted };
       }),
   }),
+  // ─── Linux Destinations (destinos independentes por probe) ─────────────────
+  linuxDestinations: router({
+    list: localAuthProcedure
+      .input(z.object({ probeId: z.number().optional() }))
+      .query(async ({ input }) => {
+        return db.listLinuxDestinations(input.probeId);
+      }),
+    create: adminProcedure
+      .input(z.object({
+        probeId: z.number(),
+        name: z.string().min(1).max(100),
+        host: z.string().min(1).max(255),
+        packetSize: z.number().int().min(1).max(65507).default(32),
+        packetCount: z.number().int().min(1).max(100).default(5),
+        frequency: z.number().int().min(5).max(86400).default(30),
+        offlineAlert: z.enum(["never", "always", "threshold"]).default("never"),
+      }))
+      .mutation(async ({ input }) => {
+        const dest = await db.createLinuxDestination(input);
+        await db.addAuditLog({
+          type: "config_change",
+          severity: "info",
+          title: "Monitor Linux: destino adicionado",
+          description: `${input.name} (${input.host}) para probe ID ${input.probeId}`,
+        });
+        return dest;
+      }),
+    update: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).max(100).optional(),
+        host: z.string().min(1).max(255).optional(),
+        packetSize: z.number().int().min(1).max(65507).optional(),
+        packetCount: z.number().int().min(1).max(100).optional(),
+        frequency: z.number().int().min(5).max(86400).optional(),
+        offlineAlert: z.enum(["never", "always", "threshold"]).optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateLinuxDestination(id, data);
+        return { success: true };
+      }),
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteLinuxDestination(input.id);
+        return { success: true };
+      }),
+    metrics: localAuthProcedure
+      .input(z.object({
+        destinationId: z.number().optional(),
+        probeId: z.number().optional(),
+        hours: z.number().default(6),
+      }))
+      .query(async ({ input }) => {
+        return db.listLinuxDestMetrics(input);
+      }),
+    clearMetrics: adminProcedure
+      .input(z.object({ destinationId: z.number().optional() }))
+      .mutation(async ({ input }) => {
+        await db.clearLinuxDestMetrics(input.destinationId);
+        return { success: true };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

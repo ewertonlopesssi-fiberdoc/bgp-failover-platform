@@ -163,6 +163,33 @@ export const linuxMetrics = mysqlTable("linux_metrics", {
 });
 export type LinuxMetric = typeof linuxMetrics.$inferSelect;
 
+// Linux Destinations — independent targets for direct Debian monitoring
+export const linuxDestinations = mysqlTable("linux_destinations", {
+  id: int("id").autoincrement().primaryKey(),
+  probeId: int("probeId").notNull(), // FK to linux_probes
+  name: varchar("name", { length: 100 }).notNull(),
+  host: varchar("host", { length: 255 }).notNull(),
+  packetSize: int("packetSize").default(32).notNull(),   // bytes
+  packetCount: int("packetCount").default(5).notNull(),  // probes per run
+  frequency: int("frequency").default(30).notNull(),     // seconds between runs
+  offlineAlert: mysqlEnum("offlineAlert", ["never", "always", "threshold"]).default("threshold").notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type LinuxDestination = typeof linuxDestinations.$inferSelect;
+
+// Linux Destination Metrics — results from direct ping probes per destination
+export const linuxDestMetrics = mysqlTable("linux_dest_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  destinationId: int("destinationId").notNull(),
+  probeId: int("probeId").notNull(),
+  latencyMs: float("latencyMs").notNull(),
+  packetLoss: float("packetLoss").default(0).notNull(),
+  measuredAt: timestamp("measuredAt").defaultNow().notNull(),
+});
+export type LinuxDestMetric = typeof linuxDestMetrics.$inferSelect;
+
 // Audit / event log
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),

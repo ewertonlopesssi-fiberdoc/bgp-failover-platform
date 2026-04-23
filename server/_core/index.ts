@@ -65,7 +65,7 @@ async function startServer() {
     // Iniciar daemon de monitoramento passivo (somente leitura)
     startMonitor(30);
     // Iniciar monitor Linux (ping direto no Debian)
-    startLinuxMonitor(60);
+    startLinuxMonitor(10); // ciclo curto para verificar frequência individual por destino
   });
 }
 

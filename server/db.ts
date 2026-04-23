@@ -7,6 +7,7 @@ import {
   telegramConfig, dedicatedClients, clientDestinations,
   latencyMetrics, auditLogs, clientFailoverState,
   linuxProbes, linuxMetrics, LinuxProbe,
+  linuxDestinations, linuxDestMetrics, LinuxDestination,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -386,5 +387,107 @@ export async function clearLinuxMetrics(probeId?: number) {
   const result = probeId
     ? await db.delete(linuxMetrics).where(eq(linuxMetrics.probeId, probeId))
     : await db.delete(linuxMetrics);
+  return (result as any)[0]?.affectedRows ?? 0;
+}
+
+// ─── Linux Destinations ────────────────────────────────────────────────────────────────────────
+export async function listLinuxDestinations(probeId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  if (probeId !== undefined) {
+    return db.select().from(linuxDestinations).where(eq(linuxDestinations.probeId, probeId)).orderBy(linuxDestinations.name);
+  }
+  return db.select().from(linuxDestinations).orderBy(linuxDestinations.name);
+}
+
+export async function getLinuxDestination(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(linuxDestinations).where(eq(linuxDestinations.id, id));
+  return rows[0] ?? null;
+}
+
+export async function createLinuxDestination(data: {
+  probeId: number;
+  name: string;
+  host: string;
+  packetSize?: number;
+  packetCount?: number;
+  frequency?: number;
+  offlineAlert?: "never" | "always" | "threshold";
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(linuxDestinations).values({
+    probeId: data.probeId,
+    name: data.name,
+    host: data.host,
+    packetSize: data.packetSize ?? 32,
+    packetCount: data.packetCount ?? 5,
+    frequency: data.frequency ?? 30,
+    offlineAlert: data.offlineAlert ?? "threshold",
+    active: true,
+  });
+  return (result as any)[0]?.insertId as number;
+}
+
+export async function updateLinuxDestination(id: number, data: Partial<{
+  name: string;
+  host: string;
+  packetSize: number;
+  packetCount: number;
+  frequency: number;
+  offlineAlert: "never" | "always" | "threshold";
+  active: boolean;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(linuxDestinations).set(data).where(eq(linuxDestinations.id, id));
+}
+
+export async function deleteLinuxDestination(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(linuxDestMetrics).where(eq(linuxDestMetrics.destinationId, id));
+  await db.delete(linuxDestinations).where(eq(linuxDestinations.id, id));
+}
+
+// ─── Linux Destination Metrics ─────────────────────────────────────────────────────────────────
+export async function addLinuxDestMetric(data: {
+  destinationId: number;
+  probeId: number;
+  latencyMs: number;
+  packetLoss: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(linuxDestMetrics).values({ ...data, measuredAt: new Date() });
+}
+
+export async function listLinuxDestMetrics(params: {
+  destinationId?: number;
+  probeId?: number;
+  hours?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - (params.hours ?? 6) * 3600 * 1000);
+  const conditions = [gte(linuxDestMetrics.measuredAt, since)];
+  if (params.destinationId) conditions.push(eq(linuxDestMetrics.destinationId, params.destinationId));
+  if (params.probeId) conditions.push(eq(linuxDestMetrics.probeId, params.probeId));
+  return db
+    .select()
+    .from(linuxDestMetrics)
+    .where(and(...conditions))
+    .orderBy(desc(linuxDestMetrics.measuredAt))
+    .limit(2000);
+}
+
+export async function clearLinuxDestMetrics(destinationId?: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = destinationId
+    ? await db.delete(linuxDestMetrics).where(eq(linuxDestMetrics.destinationId, destinationId))
+    : await db.delete(linuxDestMetrics);
   return (result as any)[0]?.affectedRows ?? 0;
 }
