@@ -43,16 +43,16 @@
 - [x] Diferenciar cores das operadoras nos gráficos (ALOO azul, BR Digital verde)
 
 ## Fase 4 - Monitor Linux (Ping Direto no Debian)
-- [ ] Schema: tabela `linux_probes` (id, operatorId, name, sourceIp, active, createdAt)
-- [ ] Schema: tabela `linux_metrics` (id, probeId, operatorId, destinationId, latencyMs, packetLoss, measuredAt)
-- [ ] Backend: módulo `linuxMonitor.ts` — executa `ping -I <sourceIp> -c 5 <destino>` e salva métricas
-- [ ] Backend: tRPC `linuxProbes.list`, `linuxProbes.add`, `linuxProbes.remove`, `linuxProbes.toggle`
-- [ ] Backend: tRPC `linuxProbes.applyLoopback` — executa `ip addr add/del <ip>/32 dev lo` no Debian
-- [ ] Backend: tRPC `linuxMetrics.list` — retorna métricas do monitor Linux por período
-- [ ] Backend: tRPC `linuxMetrics.reset` — limpa histórico de linux_metrics
-- [ ] Frontend: página `/linux-monitor` com CRUD de loopbacks e gráficos de latência/perda
-- [ ] Frontend: adicionar item "Monitor Linux" no menu lateral
-- [ ] Deploy: migração SQL das novas tabelas em produção
+- [x] Schema: tabela `linux_probes` (id, operatorId, name, sourceIp, active, createdAt)
+- [x] Schema: tabela `linux_metrics` (id, probeId, operatorId, destinationId, latencyMs, packetLoss, measuredAt)
+- [x] Backend: módulo `linuxMonitor.ts` — executa `ping -I <sourceIp> -c 5 <destino>` e salva métricas
+- [x] Backend: tRPC `linuxProbes.list`, `linuxProbes.add`, `linuxProbes.remove`, `linuxProbes.toggle`
+- [x] Backend: tRPC `linuxProbes.applyLoopback` — executa `ip addr add/del <ip>/32 dev lo` no Debian
+- [x] Backend: tRPC `linuxMetrics.list` — retorna métricas do monitor Linux por período
+- [x] Backend: tRPC `linuxMetrics.reset` — limpa histórico de linux_metrics
+- [x] Frontend: página `/linux-monitor` com CRUD de loopbacks e gráficos de latência/perda
+- [x] Frontend: adicionar item "Monitor Linux" no menu lateral
+- [x] Deploy: migração SQL das novas tabelas em produção
 
 ## Fase 4 - Monitor Linux (Ping Direto Debian)
 - [x] Criar tabelas linux_probes e linux_metrics no banco de dados

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { MessageSquare, Save, ExternalLink, Bell } from "lucide-react";
+import { MessageSquare, Save, ExternalLink, Bell, Send } from "lucide-react";
 
 export default function TelegramConfig() {
   const { isAdmin } = useLocalAuth();
@@ -18,6 +18,10 @@ export default function TelegramConfig() {
     if (config) setForm({ botToken: "", chatId: config.chatId ?? "", enabled: config.enabled, notifyFailover: config.notifyFailover, notifyRecovery: config.notifyRecovery, notifyHighLatency: config.notifyHighLatency, notifyBgpDown: config.notifyBgpDown });
   }, [config]);
 
+  const testMutation = trpc.telegram.sendTest.useMutation({
+    onSuccess: () => toast.success("✅ Mensagem de teste enviada com sucesso! Verifique o Telegram."),
+    onError: (e) => toast.error(`Falha no teste: ${e.message}`),
+  });
   const saveMutation = trpc.telegram.save.useMutation({
     onSuccess: () => { toast.success("Configuração Telegram salva"); utils.telegram.get.invalidate(); },
     onError: (e) => toast.error(e.message),
@@ -66,7 +70,23 @@ export default function TelegramConfig() {
             ))}
           </div>
         </div>
-        {isAdmin && <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} size="sm" className="gap-2"><Save className="w-3.5 h-3.5" />{saveMutation.isPending ? "Salvando..." : "Salvar Configuração"}</Button>}
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} size="sm" className="gap-2">
+              <Save className="w-3.5 h-3.5" />{saveMutation.isPending ? "Salvando..." : "Salvar Configuração"}
+            </Button>
+            <Button
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending || !config?.botToken || !config?.chatId}
+              size="sm"
+              variant="outline"
+              className="gap-2 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 bg-transparent"
+            >
+              <Send className="w-3.5 h-3.5" />
+              {testMutation.isPending ? "Enviando..." : "Testar Envio"}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

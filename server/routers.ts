@@ -306,10 +306,28 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         await db.saveTelegramConfig(input);
         await db.addAuditLog({ type: "config_change", severity: "info", title: "Configuração Telegram atualizada", userId: (ctx as any).localUser?.id });
-        return { success: true };
+         return { success: true };
       }),
+    sendTest: adminProcedure.mutation(async () => {
+      const config = await db.getTelegramConfig();
+      if (!config || !config.botToken || !config.chatId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bot Token e Chat ID precisam estar configurados antes de testar.' });
+      }
+      const url = `https://api.telegram.org/bot${config.botToken}/sendMessage`;
+      const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Recife' });
+      const text = `✅ *Teste de Notificação*\n\nBGP Failover Platform\nEste é um teste de envio do bot Telegram.\n\n🕐 ${now}\n🖥️ Servidor: BGP Failover Web`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: config.chatId, text, parse_mode: 'Markdown' }),
+      });
+      const data = await res.json() as { ok: boolean; description?: string };
+      if (!data.ok) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Telegram API retornou erro: ${data.description}` });
+      }
+      return { success: true };
+    }),
   }),
-
   // ─── Dedicated Clients ────────────────────────────────────────────────────
   clients: router({
     list: localAuthProcedure.query(async () => {
