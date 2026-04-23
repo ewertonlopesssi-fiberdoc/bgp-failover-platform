@@ -74,6 +74,8 @@ import {
   AlertTriangle,
   TrendingUp,
   TrendingDown,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -546,8 +548,128 @@ function DestStatusBadge({
   );
 }
 
-// ── Destination metrics chart (inline row) ─────────────────────────────────
+/// ── Destination grid card ────────────────────────────────────────────────
+function DestGridCard({
+  dest,
+  probeId,
+  onOpenHistory,
+  onOpenEdit,
+  isAdmin,
+}: {
+  dest: any;
+  probeId: number;
+  onOpenHistory: (target: HistoryTarget) => void;
+  onOpenEdit: (dest: any) => void;
+  isAdmin: boolean;
+}) {
+  const { data: metrics } = trpc.linuxDestinations.metrics.useQuery(
+    { destinationId: dest.id, probeId, hours: 1 },
+    { refetchInterval: 15000, staleTime: 10000 }
+  );
+  const status = useMemo(() => {
+    if (!metrics || metrics.length === 0) return null;
+    const latest = metrics[0];
+    return { latency: latest.latencyMs, loss: latest.packetLoss };
+  }, [metrics]);
+  const isOffline = status ? status.loss >= 100 : false;
+  const isDegraded = status
+    ? !isOffline && (
+        (dest.lossThreshold > 0 ? status.loss > dest.lossThreshold : status.loss > 10) ||
+        (dest.latencyThreshold > 0 ? status.latency > dest.latencyThreshold : status.latency > 200)
+      )
+    : false;
 
+  // Colors: offline=red, degraded=yellow, ok=green, no data=gray
+  const bgColor = !status
+    ? "bg-zinc-700/60 border-zinc-600"
+    : isOffline
+    ? "bg-red-900/70 border-red-700"
+    : isDegraded
+    ? "bg-yellow-900/70 border-yellow-600"
+    : "bg-green-900/70 border-green-700";
+  const metricColor = !status
+    ? "text-zinc-300"
+    : isOffline
+    ? "text-red-300"
+    : isDegraded
+    ? "text-yellow-300"
+    : "text-green-300";
+  const nameColor = !status
+    ? "text-zinc-400"
+    : isOffline
+    ? "text-red-400/80"
+    : isDegraded
+    ? "text-yellow-400/80"
+    : "text-green-400/80";
+  const label = !status
+    ? "sem dados"
+    : isOffline
+    ? "offline"
+    : `${status.latency.toFixed(1)} ms / ${status.loss.toFixed(0)}%`;
+
+  const handleDoubleClick = useCallback(() => {
+    onOpenHistory({
+      destinationId: dest.id,
+      probeId,
+      name: dest.name,
+      host: dest.host,
+      latencyThreshold: dest.latencyThreshold ?? 0,
+      lossThreshold: dest.lossThreshold ?? 0,
+    });
+  }, [dest, probeId, onOpenHistory]);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          className={`relative flex flex-col justify-between rounded border px-3 py-2 cursor-pointer select-none transition-all hover:brightness-110 active:scale-95 ${bgColor}`}
+          style={{ minWidth: 110, maxWidth: 160 }}
+          onDoubleClick={handleDoubleClick}
+          title="Clique direito ou duplo clique para opções"
+        >
+          {/* Pulse dot for offline */}
+          {isOffline && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+          )}
+          <span className={`text-sm font-bold font-mono leading-tight ${metricColor}`}>
+            {label}
+          </span>
+          <span className={`text-xs mt-1 truncate ${nameColor}`} title={dest.name}>
+            {dest.name}
+          </span>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem
+          onClick={() =>
+            onOpenHistory({
+              destinationId: dest.id,
+              probeId,
+              name: dest.name,
+              host: dest.host,
+              latencyThreshold: dest.latencyThreshold ?? 0,
+              lossThreshold: dest.lossThreshold ?? 0,
+            })
+          }
+        >
+          <History className="h-4 w-4 mr-2 text-blue-400" />
+          Ver histórico
+        </ContextMenuItem>
+        {isAdmin && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => onOpenEdit(dest)}>
+              <Pencil className="h-4 w-4 mr-2 text-muted-foreground" />
+              Editar destino
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+// ── Destination metrics chart (inline row) ─────────────────────────────────
 function DestMetricsChart({
   destinationId,
   probeId,
@@ -714,6 +836,7 @@ function ProbeSection({
 }) {
   const utils = trpc.useUtils();
   const [showDestinations, setShowDestinations] = useState(true);
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [showCharts, setShowCharts] = useState<number | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editDest, setEditDest] = useState<any | null>(null);
@@ -817,11 +940,39 @@ function ProbeSection({
         <CardContent>
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-medium text-muted-foreground">Destinos monitorados</h4>
-            {isAdmin && (
-              <Button size="sm" variant="outline" onClick={() => { setForm(makeDefaultForm()); setShowAddModal(true); }}>
-                <Plus className="h-3.5 w-3.5 mr-1" />Adicionar destino
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {destinations && destinations.length > 0 && (
+                <div className="flex items-center border border-border rounded-md overflow-hidden">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-7 px-2 rounded-none border-r border-border ${
+                      viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground"
+                    }`}
+                    onClick={() => setViewMode("grid")}
+                    title="Modo grade"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={`h-7 px-2 rounded-none ${
+                      viewMode === "table" ? "bg-muted text-foreground" : "text-muted-foreground"
+                    }`}
+                    onClick={() => setViewMode("table")}
+                    title="Modo tabela"
+                  >
+                    <List className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              {isAdmin && (
+                <Button size="sm" variant="outline" onClick={() => { setForm(makeDefaultForm()); setShowAddModal(true); }}>
+                  <Plus className="h-3.5 w-3.5 mr-1" />Adicionar destino
+                </Button>
+              )}
+            </div>
           </div>
 
           {isLoading ? (
@@ -836,7 +987,22 @@ function ProbeSection({
                 </Button>
               )}
             </div>
+          ) : viewMode === "grid" ? (
+            /* ── GRID MODE ── */
+            <div className="flex flex-wrap gap-2">
+              {destinations.map((dest) => (
+                <DestGridCard
+                  key={dest.id}
+                  dest={dest}
+                  probeId={probe.id}
+                  onOpenHistory={onOpenHistory}
+                  onOpenEdit={openEdit}
+                  isAdmin={isAdmin}
+                />
+              ))}
+            </div>
           ) : (
+            /* ── TABLE MODE ── */
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

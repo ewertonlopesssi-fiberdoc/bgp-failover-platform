@@ -117,3 +117,11 @@
 - [x] linuxMonitor.ts: mensagem específica para "ambos excedidos" — indica degradação severa
 - [x] linuxMonitor.ts: notificação periódica e de normalização também diferenciadas por cenário
 - [x] Deploy em produção
+
+## Fase 11 - Monitor Linux: Grade Compacta de Destinos
+- [ ] LinuxMonitor.tsx: modo grade compacta de cards coloridos por status (verde/amarelo/vermelho)
+- [ ] Cards exibem latência/perda em destaque e nome do destino abaixo
+- [ ] Clique direito no card abre menu de contexto (Editar, Histórico, Remover)
+- [ ] Duplo clique abre histórico diretamente
+- [ ] Toggle entre modo grade e modo tabela
+- [ ] Deploy em produção
