@@ -6,6 +6,7 @@ import {
   ne8000Config, operators, destinations,
   telegramConfig, dedicatedClients, clientDestinations,
   latencyMetrics, auditLogs, clientFailoverState,
+  linuxProbes, linuxMetrics, LinuxProbe,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -328,5 +329,61 @@ export async function clearLatencyMetrics(operatorId?: number) {
     return (result as any)[0]?.affectedRows ?? 0;
   }
   const result = await db.delete(latencyMetrics);
+  return (result as any)[0]?.affectedRows ?? 0;
+}
+
+// ─── Linux Probes ────────────────────────────────────────────────────────────────────────────────
+export async function listLinuxProbes() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(linuxProbes).orderBy(linuxProbes.createdAt);
+}
+export async function addLinuxProbe(data: { operatorId: number; name: string; sourceIp: string }) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(linuxProbes).values({ ...data, active: true });
+  const id = (result as any)[0]?.insertId;
+  return id ? { id, ...data, active: true } : null;
+}
+export async function removeLinuxProbe(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(linuxProbes).where(eq(linuxProbes.id, id));
+  // Also clean up metrics
+  await db.delete(linuxMetrics).where(eq(linuxMetrics.probeId, id));
+}
+export async function toggleLinuxProbe(id: number, active: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(linuxProbes).set({ active }).where(eq(linuxProbes.id, id));
+}
+
+// ─── Linux Metrics ─────────────────────────────────────────────────────────────────────────────
+export async function listLinuxMetrics(params: {
+  operatorId?: number;
+  probeId?: number;
+  destinationId?: number;
+  hours?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - (params.hours ?? 6) * 3600 * 1000);
+  const conditions = [gte(linuxMetrics.measuredAt, since)];
+  if (params.operatorId) conditions.push(eq(linuxMetrics.operatorId, params.operatorId));
+  if (params.probeId) conditions.push(eq(linuxMetrics.probeId, params.probeId));
+  if (params.destinationId) conditions.push(eq(linuxMetrics.destinationId, params.destinationId));
+  return db
+    .select()
+    .from(linuxMetrics)
+    .where(and(...conditions))
+    .orderBy(desc(linuxMetrics.measuredAt))
+    .limit(1000);
+}
+export async function clearLinuxMetrics(probeId?: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = probeId
+    ? await db.delete(linuxMetrics).where(eq(linuxMetrics.probeId, probeId))
+    : await db.delete(linuxMetrics);
   return (result as any)[0]?.affectedRows ?? 0;
 }

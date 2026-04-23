@@ -8,6 +8,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { onDestinationDeleted } from "./monitor";
+import { addLoopbackIp, removeLoopbackIp, listLoopbackIps } from "./linuxMonitor";
 
 const JWT_SECRET = process.env.JWT_SECRET || "bgp-failover-secret-key";
 const LOCAL_AUTH_COOKIE = "bgp_local_auth";
@@ -483,6 +484,82 @@ export const appRouter = router({
       };
     }),
   }),
-});
 
+  // ─── Linux Probes (Monitor Direto Debian)) ─────────────────────────────────────────────────────────────────────────────────
+  linuxProbes: router({
+    list: localAuthProcedure.query(async () => {
+      const probes = await db.listLinuxProbes();
+      const loopbacks = await listLoopbackIps();
+      return probes.map((p) => ({
+        ...p,
+        loopbackActive: loopbacks.some((l) => l.startsWith(p.sourceIp)),
+      }));
+    }),
+    add: adminProcedure
+      .input(z.object({
+        operatorId: z.number(),
+        name: z.string().min(1).max(100),
+        sourceIp: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$/, "IP inválido"),
+      }))
+      .mutation(async ({ input }) => {
+        const probe = await db.addLinuxProbe({ operatorId: input.operatorId, name: input.name, sourceIp: input.sourceIp });
+        // Automatically add loopback IP
+        const loResult = await addLoopbackIp(input.sourceIp);
+        await db.addAuditLog({
+          type: "config_change",
+          severity: "info",
+          title: `Monitor Linux: probe adicionada`,
+          description: `${input.name} (${input.sourceIp}) — ${loResult.message}`,
+        });
+        return { probe, loopback: loResult };
+      }),
+    remove: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        // Get probe info before deleting
+        const probes = await db.listLinuxProbes();
+        const probe = probes.find((p) => p.id === input.id);
+        if (!probe) throw new TRPCError({ code: "NOT_FOUND" });
+        await db.removeLinuxProbe(input.id);
+        // Remove loopback IP
+        const loResult = await removeLoopbackIp(probe.sourceIp);
+        await db.addAuditLog({
+          type: "config_change",
+          severity: "warning",
+          title: `Monitor Linux: probe removida`,
+          description: `${probe.name} (${probe.sourceIp}) — ${loResult.message}`,
+        });
+        return { success: true, loopback: loResult };
+      }),
+    toggle: adminProcedure
+      .input(z.object({ id: z.number(), active: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await db.toggleLinuxProbe(input.id, input.active);
+        return { success: true };
+      }),
+    loopbacks: localAuthProcedure.query(async () => {
+      return listLoopbackIps();
+    }),
+  }),
+
+  // ─── Linux Metrics ──────────────────────────────────────────────────────────────────────────────────────
+  linuxMetrics: router({
+    list: localAuthProcedure
+      .input(z.object({
+        operatorId: z.number().optional(),
+        probeId: z.number().optional(),
+        destinationId: z.number().optional(),
+        hours: z.number().default(6),
+      }))
+      .query(async ({ input }) => {
+        return db.listLinuxMetrics(input);
+      }),
+    reset: adminProcedure
+      .input(z.object({ probeId: z.number().optional() }))
+      .mutation(async ({ input }) => {
+        const deleted = await db.clearLinuxMetrics(input.probeId);
+        return { success: true, deleted };
+      }),
+  }),
+});
 export type AppRouter = typeof appRouter;

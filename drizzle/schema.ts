@@ -137,6 +137,30 @@ export const latencyMetrics = mysqlTable("latency_metrics", {
 
 export type LatencyMetric = typeof latencyMetrics.$inferSelect;
 
+// Linux Probes — loopback IPs for direct Debian monitoring
+export const linuxProbes = mysqlTable("linux_probes", {
+  id: int("id").autoincrement().primaryKey(),
+  operatorId: int("operatorId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  sourceIp: varchar("sourceIp", { length: 45 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type LinuxProbe = typeof linuxProbes.$inferSelect;
+
+// Linux Metrics — results from direct ping probes
+export const linuxMetrics = mysqlTable("linux_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  probeId: int("probeId").notNull(),
+  operatorId: int("operatorId").notNull(),
+  destinationId: int("destinationId").notNull(),
+  latencyMs: float("latencyMs").notNull(),
+  packetLoss: float("packetLoss").default(0).notNull(),
+  measuredAt: timestamp("measuredAt").defaultNow().notNull(),
+});
+export type LinuxMetric = typeof linuxMetrics.$inferSelect;
+
 // Audit / event log
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),

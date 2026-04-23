@@ -15,6 +15,13 @@
       "when": 1776869661889,
       "tag": "0001_clever_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776958877309,
+      "tag": "0002_yielding_prism",
+      "breakpoints": true
     }
   ]
 }

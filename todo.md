@@ -41,3 +41,24 @@
 - [x] Endpoint tRPC: latency.reset implementado (DELETE em latency_metrics)
 - [x] Remover gráfico de Jitter da página de métricas
 - [x] Diferenciar cores das operadoras nos gráficos (ALOO azul, BR Digital verde)
+
+## Fase 4 - Monitor Linux (Ping Direto no Debian)
+- [ ] Schema: tabela `linux_probes` (id, operatorId, name, sourceIp, active, createdAt)
+- [ ] Schema: tabela `linux_metrics` (id, probeId, operatorId, destinationId, latencyMs, packetLoss, measuredAt)
+- [ ] Backend: módulo `linuxMonitor.ts` — executa `ping -I <sourceIp> -c 5 <destino>` e salva métricas
+- [ ] Backend: tRPC `linuxProbes.list`, `linuxProbes.add`, `linuxProbes.remove`, `linuxProbes.toggle`
+- [ ] Backend: tRPC `linuxProbes.applyLoopback` — executa `ip addr add/del <ip>/32 dev lo` no Debian
+- [ ] Backend: tRPC `linuxMetrics.list` — retorna métricas do monitor Linux por período
+- [ ] Backend: tRPC `linuxMetrics.reset` — limpa histórico de linux_metrics
+- [ ] Frontend: página `/linux-monitor` com CRUD de loopbacks e gráficos de latência/perda
+- [ ] Frontend: adicionar item "Monitor Linux" no menu lateral
+- [ ] Deploy: migração SQL das novas tabelas em produção
+
+## Fase 4 - Monitor Linux (Ping Direto Debian)
+- [x] Criar tabelas linux_probes e linux_metrics no banco de dados
+- [x] Implementar módulo linuxMonitor.ts com ping -I source_ip
+- [x] Gerenciamento automático de loopbacks (ip addr add/del)
+- [x] Endpoints tRPC: linuxProbes.list/add/remove/toggle e linuxMetrics.list/reset
+- [x] Página LinuxMonitor.tsx com CRUD de probes e gráficos
+- [x] Item "Monitor Linux" no menu lateral
+- [x] Deploy em produção

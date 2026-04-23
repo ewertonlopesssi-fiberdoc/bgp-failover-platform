@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { startMonitor } from "../monitor";
+import { startLinuxMonitor } from "../linuxMonitor";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -63,6 +64,8 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     // Iniciar daemon de monitoramento passivo (somente leitura)
     startMonitor(30);
+    // Iniciar monitor Linux (ping direto no Debian)
+    startLinuxMonitor(60);
   });
 }
 
