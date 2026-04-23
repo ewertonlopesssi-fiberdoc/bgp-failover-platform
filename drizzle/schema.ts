@@ -92,6 +92,8 @@ export const telegramConfig = mysqlTable("telegram_config", {
   notifyRecovery: boolean("notifyRecovery").default(true).notNull(),
   notifyHighLatency: boolean("notifyHighLatency").default(true).notNull(),
   notifyBgpDown: boolean("notifyBgpDown").default(true).notNull(),
+  latencyThreshold: int("latencyThreshold").default(50).notNull(),
+  packetLossThreshold: float("packetLossThreshold").default(5.0).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

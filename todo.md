@@ -62,3 +62,11 @@
 - [x] Página LinuxMonitor.tsx com CRUD de probes e gráficos
 - [x] Item "Monitor Linux" no menu lateral
 - [x] Deploy em produção
+
+## Fase 5 - Alertas Telegram por Limiar
+- [x] Criar função sendTelegramMessage reutilizável no servidor
+- [x] Adicionar campos latencyThreshold e packetLossThreshold na tabela telegram_config
+- [x] Integrar envio de alerta no monitor quando latência/perda excede limiar
+- [x] Integrar envio de alerta quando operadora muda de status (down/degraded/recovery)
+- [x] Adicionar campos de limiar na página TelegramConfig
+- [x] Deploy em produção

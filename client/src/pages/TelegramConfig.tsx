@@ -6,16 +6,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { MessageSquare, Save, ExternalLink, Bell, Send } from "lucide-react";
+import { MessageSquare, Save, ExternalLink, Bell, Send, Gauge } from "lucide-react";
 
 export default function TelegramConfig() {
   const { isAdmin } = useLocalAuth();
   const utils = trpc.useUtils();
   const { data: config } = trpc.telegram.get.useQuery();
-  const [form, setForm] = useState({ botToken: "", chatId: "", enabled: false, notifyFailover: true, notifyRecovery: true, notifyHighLatency: true, notifyBgpDown: true });
+  const [form, setForm] = useState({
+    botToken: "",
+    chatId: "",
+    enabled: false,
+    notifyFailover: true,
+    notifyRecovery: true,
+    notifyHighLatency: true,
+    notifyBgpDown: true,
+    latencyThreshold: 50,
+    packetLossThreshold: 5,
+  });
 
   useEffect(() => {
-    if (config) setForm({ botToken: "", chatId: config.chatId ?? "", enabled: config.enabled, notifyFailover: config.notifyFailover, notifyRecovery: config.notifyRecovery, notifyHighLatency: config.notifyHighLatency, notifyBgpDown: config.notifyBgpDown });
+    if (config) setForm({
+      botToken: "",
+      chatId: config.chatId ?? "",
+      enabled: config.enabled,
+      notifyFailover: config.notifyFailover,
+      notifyRecovery: config.notifyRecovery,
+      notifyHighLatency: config.notifyHighLatency,
+      notifyBgpDown: config.notifyBgpDown,
+      latencyThreshold: config.latencyThreshold ?? 50,
+      packetLossThreshold: config.packetLossThreshold ?? 5,
+    });
   }, [config]);
 
   const testMutation = trpc.telegram.sendTest.useMutation({
@@ -30,16 +50,20 @@ export default function TelegramConfig() {
   const notifs = [
     { key: "notifyFailover", label: "Failover acionado", desc: "Quando uma operadora entra em failover" },
     { key: "notifyRecovery", label: "Recuperação", desc: "Quando o serviço se recupera" },
-    { key: "notifyHighLatency", label: "Latência alta", desc: "Quando latência excede o limite" },
+    { key: "notifyHighLatency", label: "Latência/Perda alta", desc: "Quando latência ou perda excede o limite configurado" },
     { key: "notifyBgpDown", label: "BGP offline", desc: "Quando uma sessão BGP cai" },
   ];
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2"><MessageSquare className="w-5 h-5 text-primary" />Notificações Telegram</h1>
+        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <MessageSquare className="w-5 h-5 text-primary" />Notificações Telegram
+        </h1>
         <p className="text-sm text-muted-foreground mt-0.5">Configure o bot para receber alertas em tempo real</p>
       </div>
+
+      {/* Instruções */}
       <div className="rounded-xl border p-5" style={{ background: "oklch(0.55 0.20 255 / 0.05)", borderColor: "oklch(0.55 0.20 255 / 0.2)" }}>
         <p className="text-sm font-medium text-foreground mb-2">Como configurar</p>
         <ol className="space-y-1.5 text-xs text-muted-foreground list-decimal list-inside">
@@ -48,30 +72,98 @@ export default function TelegramConfig() {
           <li>Copie o token gerado e cole abaixo</li>
           <li>Adicione o bot ao seu grupo e obtenha o Chat ID</li>
         </ol>
-        <a href="https://core.telegram.org/bots" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary mt-3 hover:underline"><ExternalLink className="w-3 h-3" />Documentação oficial</a>
+        <a href="https://core.telegram.org/bots" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary mt-3 hover:underline">
+          <ExternalLink className="w-3 h-3" />Documentação oficial
+        </a>
       </div>
+
+      {/* Configuração principal */}
       <div className="rounded-xl border p-6 space-y-5" style={{ background: "oklch(0.13 0.012 260)", borderColor: "oklch(0.22 0.015 260)" }}>
         <div className="flex items-center justify-between">
-          <div><p className="text-sm font-semibold text-foreground">Ativar Notificações</p><p className="text-xs text-muted-foreground mt-0.5">Habilitar envio de alertas via Telegram</p></div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">Ativar Notificações</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Habilitar envio de alertas via Telegram</p>
+          </div>
           <Switch checked={form.enabled} onCheckedChange={v => setForm(f => ({ ...f, enabled: v }))} disabled={!isAdmin} />
         </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Bot Token</Label><Input value={form.botToken} onChange={e => setForm(f => ({ ...f, botToken: e.target.value }))} placeholder={config?.botToken ? "Token salvo (oculto)" : "1234567890:ABC..."} type="password" className="h-9 bg-input border-border text-sm" disabled={!isAdmin} /></div>
-          <div className="space-y-1.5"><Label className="text-xs text-muted-foreground">Chat ID</Label><Input value={form.chatId} onChange={e => setForm(f => ({ ...f, chatId: e.target.value }))} placeholder="-1001234567890" className="h-9 bg-input border-border text-sm" disabled={!isAdmin} /></div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Bot Token</Label>
+            <Input value={form.botToken} onChange={e => setForm(f => ({ ...f, botToken: e.target.value }))} placeholder={config?.botToken ? "Token salvo (oculto)" : "1234567890:ABC..."} type="password" className="h-9 bg-input border-border text-sm" disabled={!isAdmin} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Chat ID</Label>
+            <Input value={form.chatId} onChange={e => setForm(f => ({ ...f, chatId: e.target.value }))} placeholder="-1001234567890" className="h-9 bg-input border-border text-sm" disabled={!isAdmin} />
+          </div>
         </div>
+
+        {/* Limiares de alerta */}
         <div className="border-t pt-5" style={{ borderColor: "oklch(0.22 0.015 260)" }}>
-          <p className="text-sm font-medium text-foreground mb-3 flex items-center gap-2"><Bell className="w-4 h-4 text-primary" />Tipos de Notificação</p>
+          <p className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-amber-400" />Limiares de Alerta
+          </p>
+          <p className="text-xs text-muted-foreground mb-4">
+            O sistema enviará um alerta quando a latência ou perda de pacotes exceder estes valores em qualquer operadora.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Latência máxima (ms)</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={form.latencyThreshold}
+                  onChange={e => setForm(f => ({ ...f, latencyThreshold: Number(e.target.value) }))}
+                  className="h-9 bg-input border-border text-sm pr-10"
+                  disabled={!isAdmin}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">ms</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Alerta quando RTT &gt; {form.latencyThreshold}ms</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Perda máxima de pacotes (%)</Label>
+              <div className="relative">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.1}
+                  value={form.packetLossThreshold}
+                  onChange={e => setForm(f => ({ ...f, packetLossThreshold: Number(e.target.value) }))}
+                  className="h-9 bg-input border-border text-sm pr-8"
+                  disabled={!isAdmin}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Alerta quando perda &gt; {form.packetLossThreshold}%</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Tipos de notificação */}
+        <div className="border-t pt-5" style={{ borderColor: "oklch(0.22 0.015 260)" }}>
+          <p className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-primary" />Tipos de Notificação
+          </p>
           <div className="space-y-3">
             {notifs.map(n => (
               <div key={n.key} className="flex items-center justify-between p-3 rounded-lg" style={{ background: "oklch(0.11 0.01 260)" }}>
-                <div><p className="text-sm font-medium text-foreground">{n.label}</p><p className="text-xs text-muted-foreground mt-0.5">{n.desc}</p></div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">{n.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{n.desc}</p>
+                </div>
                 <Switch checked={(form as any)[n.key]} onCheckedChange={v => setForm(f => ({ ...f, [n.key]: v }))} disabled={!isAdmin} />
               </div>
             ))}
           </div>
         </div>
+
+        {/* Botões de ação */}
         {isAdmin && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 pt-1">
             <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending} size="sm" className="gap-2">
               <Save className="w-3.5 h-3.5" />{saveMutation.isPending ? "Salvando..." : "Salvar Configuração"}
             </Button>

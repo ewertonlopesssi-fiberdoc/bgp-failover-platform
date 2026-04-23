@@ -302,6 +302,8 @@ export const appRouter = router({
         notifyRecovery: z.boolean(),
         notifyHighLatency: z.boolean(),
         notifyBgpDown: z.boolean(),
+        latencyThreshold: z.number().min(1).max(10000).default(50),
+        packetLossThreshold: z.number().min(0).max(100).default(5),
       }))
       .mutation(async ({ input, ctx }) => {
         await db.saveTelegramConfig(input);

@@ -17,6 +17,7 @@
  */
 import { Client } from "ssh2";
 import * as db from "./db";
+import { notifyOperatorStatusChange, notifyThresholdAlert } from "./telegram";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface BgpPeerStatus {
@@ -608,6 +609,18 @@ async function runMonitorCycle() {
               packetLoss: loss,
               jitterMs: Math.round(jitter),
             });
+            // Alerta de limiar via Telegram
+            const tgConfig1 = await db.getTelegramConfig().catch(() => null);
+            if (tgConfig1) {
+              await notifyThresholdAlert(
+                operator.name,
+                operator.peerIp || "peer BGP",
+                latency,
+                loss,
+                tgConfig1.latencyThreshold ?? 50,
+                tgConfig1.packetLossThreshold ?? 5
+              );
+            }
             if (fallbackResult.success) {
               nqaSuccessCount++;
               console.log(
@@ -645,6 +658,18 @@ async function runMonitorCycle() {
                 packetLoss: loss,
                 jitterMs: Math.round(jitter),
               });
+              // Alerta de limiar via Telegram
+              const tgConfig2 = await db.getTelegramConfig().catch(() => null);
+              if (tgConfig2) {
+                await notifyThresholdAlert(
+                  operator.name,
+                  dest.host,
+                  latency,
+                  loss,
+                  tgConfig2.latencyThreshold ?? 50,
+                  tgConfig2.packetLossThreshold ?? 5
+                );
+              }
               if (nqaResult.success) {
                 nqaSuccessCount++;
                 console.log(
@@ -679,6 +704,13 @@ async function runMonitorCycle() {
             title: `Operadora ${operator.name}: ${newStatus.toUpperCase()}`,
             description: `Status alterado de ${operator.status} para ${newStatus}. Peer BGP: ${peer?.state || "não encontrado"}. NQA: ${nqaSuccessCount}/${destList.length} destinos OK`,
           });
+          // Notificação Telegram de mudança de status
+          await notifyOperatorStatusChange(
+            operator.name,
+            operator.status,
+            newStatus,
+            `Peer BGP: ${peer?.state || "não encontrado"}. NQA: ${nqaSuccessCount}/${destList.length} destinos OK`
+          );
         } else {
           await db.updateOperator(operator.id, { status: newStatus });
         }

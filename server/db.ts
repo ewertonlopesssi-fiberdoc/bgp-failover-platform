@@ -204,6 +204,7 @@ export async function saveTelegramConfig(data: {
   botToken?: string; chatId?: string; enabled: boolean;
   notifyFailover: boolean; notifyRecovery: boolean;
   notifyHighLatency: boolean; notifyBgpDown: boolean;
+  latencyThreshold?: number; packetLossThreshold?: number;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
