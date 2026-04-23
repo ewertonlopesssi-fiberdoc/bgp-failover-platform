@@ -25,3 +25,13 @@
 - [x] Painel de controle do serviço (start/stop/restart/status)
 - [x] Log de eventos e auditoria
 - [x] Gerenciamento de destinos monitorados por operadora
+
+## Fase 2 - NQA Automático (Correções)
+- [x] Monitor SSH: usa shell interativo (conn.shell) para compatibilidade com Ne8000
+- [x] NQA: criação/remoção automática de testes por destino monitorado
+- [x] NQA: tipo de teste alterado de icmpjitter para icmp (compatível com peer BGP)
+- [x] NQA: limpeza automática de testes legados (v1/v2) na inicialização
+- [x] NQA: parser atualizado para suportar formato icmp (Min/Max/Average Completion Time + Lost packet ratio)
+- [x] Status: ALOO mostra Online (BGP Established + NQA icmp funcionando, RTT=3ms)
+- [x] Status: lógica de fallback corrigida (sem destinos reais = BGP determina status, não NQA)
+- [ ] BR Digital: destino 8.8.8.8 inacessível via interface 201.16.68.109 (problema de conectividade real)

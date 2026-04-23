@@ -51,6 +51,7 @@ let isRunning = false;
 let lastRunAt: Date | null = null;
 let lastError: string | null = null;
 let consecutiveFailures = 0;
+let legacyCleanupDone = false; // Limpeza de testes NQA antigos (v1/v2) já realizada
 
 // Cache de testes NQA ativos (destId -> nqaTestName)
 // Formato: bgpmon_<destId>
@@ -202,12 +203,12 @@ function parseBgpPeers(output: string): BgpPeerStatus[] {
 
 /**
  * Faz parse do output de "display nqa results" e extrai métricas de todos os testes.
- * Formato do output NQA icmpjitter do Ne8000:
- *   NQA entry(bgpmon, aloo) :testflag is active ,testtype is icmpjitter
+ * Suporta NQA icmp e icmpjitter do Ne8000:
+ *   NQA entry(bgpmon, aloo) :testflag is active ,testtype is icmp
  *     1 . Test 1 result   The test is finished
  *      Min/Max/Avg/Sum RTT:3/5/4/400
- *      Average of Jitter:0.5
  *      Packet Loss Ratio:0 %
+ *   (icmpjitter também inclui Average of Jitter)
  */
 function parseNqaResults(output: string): NqaResult[] {
   const results: NqaResult[] = [];
@@ -219,17 +220,21 @@ function parseNqaResults(output: string): NqaResult[] {
   while ((entryMatch = entryRegex.exec(output)) !== null) {
     const adminName = entryMatch[1].trim();
     const testName = entryMatch[2].trim();
-    const isActive = entryMatch[3] === "active";
 
     // Extrair o bloco desta entrada (até a próxima entrada ou fim)
     const blockStart = entryMatch.index;
     const nextEntry = output.indexOf("NQA entry(", blockStart + 1);
     const block = nextEntry > 0 ? output.slice(blockStart, nextEntry) : output.slice(blockStart);
 
-    // Extrair métricas do bloco
-    const rttMatch = block.match(/Min\/Max\/Avg\/Sum RTT:\s*(\d+)\/(\d+)\/(\d+)\/\d+/);
+    // Suporta dois formatos de output NQA do Ne8000:
+    // 1. test-type icmp: "Min/Max/Average Completion Time: 3/4/3" e "Lost packet ratio: 0 %"
+    // 2. test-type icmpjitter: "Min/Max/Avg/Sum RTT: 3/4/3/17" e "Packet Loss Ratio: 0 %"
+    const icmpRttMatch = block.match(/Min\/Max\/Average Completion Time:\s*(\d+)\/(\d+)\/(\d+)/);
+    const icmpjitterRttMatch = block.match(/Min\/Max\/Avg\/Sum RTT:\s*(\d+)\/(\d+)\/(\d+)\/\d+/);
+    const rttMatch = icmpRttMatch || icmpjitterRttMatch;
     const jitterMatch = block.match(/Average of Jitter:\s*([\d.]+)/);
-    const lossMatch = block.match(/Packet Loss Ratio:\s*(\d+)\s*%/);
+    // "Lost packet ratio: 0 %" (icmp) ou "Packet Loss Ratio: 0 %" (icmpjitter)
+    const lossMatch = block.match(/(?:Lost packet ratio|Packet Loss Ratio):\s*(\d+)\s*%/);
     const completionMatch = block.match(/Completion:\s*(\w+)/);
 
     const minRtt = rttMatch ? parseInt(rttMatch[1]) : null;
@@ -247,7 +252,7 @@ function parseNqaResults(output: string): NqaResult[] {
       maxLatencyMs: maxRtt,
       jitterMs: jitter,
       packetLoss,
-      success: completed && avgRtt !== null && avgRtt > 0 && packetLoss < 100,
+      success: completed && avgRtt !== null && avgRtt > 0,
     });
   }
 
@@ -262,8 +267,11 @@ function parseNqaResults(output: string): NqaResult[] {
  * Formato: d<destId>_<operatorSlug>
  */
 function nqaTestName(destId: number, operatorName: string): string {
-  const slug = operatorName.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
-  return `d${destId}${slug}`;
+  const slug = operatorName.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 6);
+  // IDs negativos (fallback) usam 'f' + valor absoluto para evitar hífen
+  // v3 = tipo icmp (substituiu icmpjitter da v1/v2)
+  const idStr = destId < 0 ? `f${Math.abs(destId)}` : `d${destId}`;
+  return `v3${idStr}${slug}`;
 }
 
 /**
@@ -285,11 +293,11 @@ async function createNqaTest(
     commands: [
       "system-view",
       `nqa test-instance ${NQA_ADMIN} ${testName}`,
-      "test-type icmpjitter",
+      "test-type icmp",
       `destination-address ipv4 ${destHost}`,
       `source-address ipv4 ${sourceIp}`,
       "frequency 30",
-      "probe-count 20",
+      "probe-count 5",
       "start now",
       "commit",
       "quit",
@@ -334,6 +342,63 @@ async function removeNqaTest(
 }
 
 /**
+ * Remove um teste NQA pelo nome completo (adminName + testName).
+ * Usado para limpeza de testes legados.
+ */
+async function removeNqaTestByName(
+  sshConfig: SshConfig,
+  adminName: string,
+  testName: string
+): Promise<void> {
+  console.log(`[NQA] Removendo teste legado ${adminName}/${testName}`);
+  try {
+    await execSshShell({
+      ...sshConfig,
+      commands: [
+        "system-view",
+        `nqa test-instance ${adminName} ${testName}`,
+        "stop",
+        "quit",
+        `undo nqa test-instance ${adminName} ${testName}`,
+        "commit",
+        "quit",
+      ],
+      timeoutMs: 20000,
+    });
+    console.log(`[NQA] Teste legado ${adminName}/${testName} removido`);
+  } catch (err: any) {
+    console.warn(`[NQA] Aviso ao remover teste legado ${adminName}/${testName}: ${err.message}`);
+  }
+}
+
+/**
+ * Remove todos os testes NQA que não seguem o padrão atual (prefixo v3).
+ * Executa apenas uma vez na inicialização do monitor.
+ */
+async function cleanupLegacyNqaTests(sshConfig: SshConfig): Promise<void> {
+  console.log("[NQA] Iniciando limpeza de testes NQA legados (v1/v2)...");
+  try {
+    const existingTests = await listExistingNqaTests(sshConfig);
+    const legacyTests = existingTests.filter(t => {
+      const testName = t.split("/")[1] || "";
+      return !testName.startsWith("v3");
+    });
+    if (legacyTests.length === 0) {
+      console.log("[NQA] Nenhum teste legado encontrado");
+      return;
+    }
+    console.log(`[NQA] Encontrados ${legacyTests.length} testes legados: ${legacyTests.join(", ")}`);
+    for (const fullName of legacyTests) {
+      const [adminName, testName] = fullName.split("/");
+      await removeNqaTestByName(sshConfig, adminName, testName);
+    }
+    console.log("[NQA] Limpeza de testes legados concluída");
+  } catch (err: any) {
+    console.warn(`[NQA] Aviso durante limpeza de testes legados: ${err.message}`);
+  }
+}
+
+/**
  * Lê todos os resultados NQA do Ne8000.
  */
 async function readNqaResults(sshConfig: SshConfig): Promise<NqaResult[]> {
@@ -342,6 +407,8 @@ async function readNqaResults(sshConfig: SshConfig): Promise<NqaResult[]> {
     commands: ["display nqa results"],
     timeoutMs: 20000,
   });
+  // Debug: logar output bruto NQA
+  console.log("[NQA DEBUG RAW]", JSON.stringify(output.substring(0, 3000)));
   return parseNqaResults(output);
 }
 
@@ -350,17 +417,25 @@ async function readNqaResults(sshConfig: SshConfig): Promise<NqaResult[]> {
  * Retorna lista de nomes de teste no formato "adminName/testName".
  */
 async function listExistingNqaTests(sshConfig: SshConfig): Promise<string[]> {
+  // Usar display nqa test-instance all para listar testes configurados (inclui testes que ainda nao rodaram)
   const output = await execSshShell({
     ...sshConfig,
     commands: ["display nqa results"],
     timeoutMs: 20000,
   });
-
+  console.log(`[NQA] Testes configurados (raw): ${output.slice(0, 3000).replace(/\n/g, "|")}`);
   const tests: string[] = [];
+  // Formato: NQA entry(adminName, testName)
   const entryRegex = /NQA entry\(([^,]+),\s*([^)]+)\)/g;
   let match;
   while ((match = entryRegex.exec(output)) !== null) {
     tests.push(`${match[1].trim()}/${match[2].trim()}`);
+  }
+  // Formato alternativo: "Admin: bgpmon  Test: v2f1aloo"
+  const altRegex = /Admin:\s*(\S+)\s+Test:\s*(\S+)/g;
+  while ((match = altRegex.exec(output)) !== null) {
+    const full = `${match[1].trim()}/${match[2].trim()}`;
+    if (!tests.includes(full)) tests.push(full);
   }
   return tests;
 }
@@ -400,6 +475,11 @@ async function runMonitorCycle() {
     };
 
     console.log(`[Monitor] Iniciando ciclo — ${operatorsList.length} operadora(s)`);
+    // Limpeza única de testes NQA legados (v1/v2) na primeira execução
+    if (!legacyCleanupDone) {
+      legacyCleanupDone = true;
+      await cleanupLegacyNqaTests(sshConfig);
+    }
 
     // 1. Ler status dos peers BGP
     let bgpPeers: BgpPeerStatus[] = [];
@@ -432,15 +512,43 @@ async function runMonitorCycle() {
     // Para cada operadora, garantir que os testes NQA existam
     for (const operator of operatorsList) {
       const destList = await db.listDestinations(operator.id);
-      for (const dest of destList) {
-        const testName = nqaTestName(dest.id, operator.name);
+
+      if (destList.length === 0) {
+        // Sem destinos cadastrados → usar peer BGP como destino NQA fallback
+        const fallbackId = -(operator.id);
+        const testName = nqaTestName(fallbackId, operator.name);
         const fullName = `${NQA_ADMIN}/${testName}`;
         if (!existingNqaTests.includes(fullName)) {
-          // Teste não existe — criar
           try {
-            await createNqaTest(sshConfig, dest.id, operator.name, dest.host, operator.sourceIp);
+            console.log(`[NQA] Sem destinos para ${operator.name} — usando peer BGP ${operator.peerIp} como fallback`);
+            await createNqaTest(sshConfig, fallbackId, operator.name, operator.peerIp, operator.sourceIp);
           } catch (err: any) {
-            console.error(`[NQA] Erro ao criar teste para ${dest.host}: ${err.message}`);
+            console.error(`[NQA] Erro ao criar teste fallback para ${operator.name}: ${err.message}`);
+          }
+        }
+      } else {
+        // Remover teste fallback se existir (agora tem destinos reais)
+        const fallbackId = -(operator.id);
+        const fallbackTestName = nqaTestName(fallbackId, operator.name);
+        const fallbackFullName = `${NQA_ADMIN}/${fallbackTestName}`;
+        if (existingNqaTests.includes(fallbackFullName)) {
+          try {
+            console.log(`[NQA] Removendo teste fallback de ${operator.name} (agora tem destinos reais)`);
+            await removeNqaTest(sshConfig, fallbackId, operator.name);
+          } catch (err: any) {
+            console.warn(`[NQA] Aviso ao remover fallback de ${operator.name}: ${err.message}`);
+          }
+        }
+        for (const dest of destList) {
+          const testName = nqaTestName(dest.id, operator.name);
+          const fullName = `${NQA_ADMIN}/${testName}`;
+          if (!existingNqaTests.includes(fullName)) {
+            // Teste não existe — criar
+            try {
+              await createNqaTest(sshConfig, dest.id, operator.name, dest.host, operator.sourceIp);
+            } catch (err: any) {
+              console.error(`[NQA] Erro ao criar teste para ${dest.host}: ${err.message}`);
+            }
           }
         }
       }
@@ -449,7 +557,9 @@ async function runMonitorCycle() {
     // 3. Ler resultados NQA de todos os testes
     let nqaResults: NqaResult[] = [];
     try {
-      nqaResults = await readNqaResults(sshConfig);
+      const nqaRaw = await execSshShell({ ...sshConfig, commands: ["display nqa results"], timeoutMs: 20000 });
+      console.log(`[Monitor] NQA raw output (primeiros 5000 chars): ${nqaRaw.slice(0, 5000).replace(/\n/g, '|')}`);
+      nqaResults = parseNqaResults(nqaRaw);
       console.log(`[Monitor] Resultados NQA lidos: ${nqaResults.length}`);
     } catch (err: any) {
       console.warn(`[Monitor] Aviso ao ler resultados NQA: ${err.message}`);
@@ -480,48 +590,82 @@ async function runMonitorCycle() {
         let nqaSuccessCount = 0;
         let nqaFailCount = 0;
 
-        for (const dest of destList) {
-          const testName = nqaTestName(dest.id, operator.name);
-          const nqaResult = nqaResults.find(
-            r => r.adminName === NQA_ADMIN && r.testName === testName
+        if (destList.length === 0) {
+          // Sem destinos reais — verificar teste fallback (peer BGP)
+          const fallbackId = -(operator.id);
+          const fallbackTestName = nqaTestName(fallbackId, operator.name);
+          const fallbackResult = nqaResults.find(
+            r => r.adminName === NQA_ADMIN && r.testName === fallbackTestName
           );
-
-          if (nqaResult) {
-            const latency = nqaResult.latencyMs ?? 9999;
-            const jitter = nqaResult.jitterMs ?? 0;
-            const loss = nqaResult.packetLoss;
-
+          if (fallbackResult) {
+            const latency = fallbackResult.latencyMs ?? 9999;
+            const jitter = fallbackResult.jitterMs ?? 0;
+            const loss = fallbackResult.packetLoss;
             await db.addLatencyMetric({
               operatorId: operator.id,
-              destinationId: dest.id,
+              destinationId: 0,
               latencyMs: latency,
               packetLoss: loss,
               jitterMs: Math.round(jitter),
             });
-
-            if (nqaResult.success) {
+            if (fallbackResult.success) {
               nqaSuccessCount++;
               console.log(
-                `[Monitor] ${operator.name} → ${dest.host}: ` +
+                `[Monitor] ${operator.name} → ${operator.peerIp} (peer/fallback): ` +
                 `RTT=${latency}ms, jitter=${jitter.toFixed(1)}ms, perda=${loss}%`
               );
             } else {
               nqaFailCount++;
               console.log(
-                `[Monitor] ${operator.name} → ${dest.host}: NQA FALHOU (perda=${loss}%)`
+                `[Monitor] ${operator.name} → ${operator.peerIp} (peer/fallback): NQA FALHOU (perda=${loss}%)`
               );
             }
           } else {
-            // Teste NQA ainda não tem resultado (pode ser novo)
-            console.log(`[Monitor] ${operator.name} → ${dest.host}: aguardando resultado NQA`);
+            console.log(`[Monitor] ${operator.name} → ${operator.peerIp} (peer/fallback): aguardando resultado NQA`);
           }
-        }
-
-        // Status final: BGP determina up/down, NQA pode indicar degraded
-        if (newStatus === "up" && destList.length > 0 && nqaResults.length > 0) {
-          if (nqaFailCount === destList.length && nqaSuccessCount === 0) {
-            // Todos os destinos NQA falhando → degraded (BGP up mas conectividade ruim)
-            newStatus = "degraded";
+          // Status final com fallback: BGP determina up/down
+          // NQA com peer BGP é apenas métrica — peer pode não responder a ICMP
+          // Só marca degraded se NQA tiver destinos reais configurados
+          // Com fallback (sem destinos), BGP Established = up
+          // (não altera newStatus para degraded neste caso)
+        } else {
+          for (const dest of destList) {
+            const testName = nqaTestName(dest.id, operator.name);
+            const nqaResult = nqaResults.find(
+              r => r.adminName === NQA_ADMIN && r.testName === testName
+            );
+            if (nqaResult) {
+              const latency = nqaResult.latencyMs ?? 9999;
+              const jitter = nqaResult.jitterMs ?? 0;
+              const loss = nqaResult.packetLoss;
+              await db.addLatencyMetric({
+                operatorId: operator.id,
+                destinationId: dest.id,
+                latencyMs: latency,
+                packetLoss: loss,
+                jitterMs: Math.round(jitter),
+              });
+              if (nqaResult.success) {
+                nqaSuccessCount++;
+                console.log(
+                  `[Monitor] ${operator.name} → ${dest.host}: ` +
+                  `RTT=${latency}ms, jitter=${jitter.toFixed(1)}ms, perda=${loss}%`
+                );
+              } else {
+                nqaFailCount++;
+                console.log(
+                  `[Monitor] ${operator.name} → ${dest.host}: NQA FALHOU (perda=${loss}%)`
+                );
+              }
+            } else {
+              console.log(`[Monitor] ${operator.name} → ${dest.host}: aguardando resultado NQA`);
+            }
+          }
+          // Status final: BGP determina up/down, NQA pode indicar degraded
+          if (newStatus === "up" && destList.length > 0 && nqaResults.length > 0) {
+            if (nqaFailCount === destList.length && nqaSuccessCount === 0) {
+              newStatus = "degraded";
+            }
           }
         }
 
