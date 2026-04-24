@@ -267,3 +267,11 @@
 - [x] Adicionar item "Mapa de Rede" no menu lateral (DashboardLayout.tsx)
 - [x] Registrar rota /network-map no App.tsx
 - [x] Build e deploy em produção
+
+## Fase 26b — Migração Google Maps → Leaflet/OpenStreetMap
+- [x] Substituir Google Maps (MapView) pelo Leaflet.js + react-leaflet no NetworkMap.tsx
+- [x] Usar tiles do OpenStreetMap (sem necessidade de API key ou proxy)
+- [x] Corrigir ícones do Leaflet (bug de URL com Vite) via L.Icon.Default.mergeOptions
+- [x] Substituir geocoding do Google Maps pelo Nominatim (OpenStreetMap) na importação LibreNMS
+- [x] Substituir geocoding do Google Maps pelo Nominatim no botão de busca de coordenadas por cidade
+- [x] Build e deploy em produção (45.237.165.251) com Leaflet funcionando

@@ -1,6 +1,7 @@
-/// <reference types="@types/google.maps" />
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import { useRef, useState, useEffect, useCallback } from "react";
-import { MapView } from "@/components/Map";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +38,18 @@ import {
   MapPin,
   RefreshCw,
   Download,
-  Wifi,
   Server,
   Radio,
 } from "lucide-react";
+
+// ─── Fix Leaflet default icon URLs (broken with Vite/webpack) ─────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type NodeType = "router" | "switch" | "olt" | "server" | "pop";
@@ -57,7 +66,6 @@ interface NetworkNode {
   deviceId: number | null;
   active: boolean;
 }
-
 interface NetworkLink {
   id: number;
   fromNodeId: number;
@@ -79,11 +87,13 @@ function formatBps(bps: number): string {
   return `${bps.toFixed(0)} bps`;
 }
 
-function utilColor(pct: number): string {
-  if (pct >= 80) return "#ef4444";
-  if (pct >= 60) return "#f59e0b";
-  return "#22c55e";
-}
+const NODE_COLORS: Record<NodeType, string> = {
+  router: "#3b82f6",   // blue
+  switch: "#22c55e",   // green
+  olt: "#f97316",      // orange
+  server: "#a855f7",   // purple
+  pop: "#06b6d4",      // cyan
+};
 
 const NODE_ICONS: Record<NodeType, string> = {
   router: "🔷",
@@ -92,6 +102,58 @@ const NODE_ICONS: Record<NodeType, string> = {
   server: "🖥️",
   pop: "📡",
 };
+
+const LINK_COLORS: Record<LinkType, string> = {
+  fiber: "#3b82f6",
+  radio: "#f59e0b",
+  copper: "#8b5cf6",
+  vpn: "#06b6d4",
+};
+
+// ─── Custom Leaflet icon factory ──────────────────────────────────────────────
+function makeNodeIcon(node: NetworkNode): L.DivIcon {
+  const color = node.active ? NODE_COLORS[node.nodeType] : "#6b7280";
+  const emoji = NODE_ICONS[node.nodeType] || "🔵";
+  return L.divIcon({
+    className: "",
+    iconAnchor: [0, 0],
+    popupAnchor: [0, -8],
+    html: `
+      <div style="
+        background: ${node.active ? "#1e293b" : "#374151"};
+        border: 2px solid ${color};
+        border-radius: 8px;
+        padding: 3px 8px;
+        color: white;
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        white-space: nowrap;
+        user-select: none;
+      ">${emoji} ${node.name}</div>
+    `,
+  });
+}
+
+// ─── MapFitBounds: adjusts bounds when nodes change ──────────────────────────
+function MapFitBounds({ nodes }: { nodes: NetworkNode[] }) {
+  const map = useMap();
+  useEffect(() => {
+    const withCoords = nodes.filter((n) => n.lat && n.lng);
+    if (withCoords.length === 0) return;
+    if (withCoords.length === 1) {
+      map.setView([withCoords[0].lat!, withCoords[0].lng!], 12);
+    } else {
+      const bounds = L.latLngBounds(withCoords.map((n) => [n.lat!, n.lng!] as [number, number]));
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }, [nodes, map]);
+  return null;
+}
 
 // ─── Node Form ────────────────────────────────────────────────────────────────
 interface NodeFormData {
@@ -103,7 +165,6 @@ interface NodeFormData {
   mgmtIp: string;
   deviceId: string;
 }
-
 const emptyNodeForm = (): NodeFormData => ({
   name: "",
   city: "",
@@ -125,7 +186,6 @@ interface LinkFormData {
   linkType: LinkType;
   capacityBps: string;
 }
-
 const emptyLinkForm = (): LinkFormData => ({
   fromNodeId: "",
   fromPortId: "",
@@ -139,11 +199,6 @@ const emptyLinkForm = (): LinkFormData => ({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function NetworkMap() {
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<Map<number, google.maps.marker.AdvancedMarkerElement>>(new Map());
-  const polylinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"nodes" | "links">("nodes");
 
@@ -175,145 +230,12 @@ export default function NetworkMap() {
   const updateLink = trpc.network.updateLink.useMutation({ onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link atualizado"); } });
   const deleteLink = trpc.network.deleteLink.useMutation({ onSuccess: () => { refetchLinks(); toast.success("Link removido"); } });
 
-  // ─── Map rendering ──────────────────────────────────────────────────────────
-  const renderMap = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || !window.google) return;
-
-    // Clear existing markers
-    markersRef.current.forEach((m) => { m.map = null; });
-    markersRef.current.clear();
-
-    // Clear existing polylines
-    polylinesRef.current.forEach((p) => p.setMap(null));
-    polylinesRef.current.clear();
-
-    if (!infoWindowRef.current) {
-      infoWindowRef.current = new window.google.maps.InfoWindow();
-    }
-
-    // Draw nodes
-    nodes.forEach((node) => {
-      if (!node.lat || !node.lng) return;
-
-      const el = document.createElement("div");
-      el.style.cssText = `
-        background: ${node.active ? "#1e293b" : "#374151"};
-        border: 2px solid ${node.active ? "#3b82f6" : "#6b7280"};
-        border-radius: 8px;
-        padding: 4px 8px;
-        color: white;
-        font-size: 12px;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-        white-space: nowrap;
-      `;
-      el.innerHTML = `${NODE_ICONS[node.nodeType as NodeType] || "🔵"} ${node.name}`;
-
-      const marker = new window.google.maps.marker.AdvancedMarkerElement({
-        map,
-        position: { lat: node.lat, lng: node.lng },
-        title: node.name,
-        content: el,
-      });
-
-      marker.addListener("click", () => {
-        const content = `
-          <div style="font-family:sans-serif;min-width:180px;padding:4px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:6px">${NODE_ICONS[node.nodeType as NodeType]} ${node.name}</div>
-            ${node.city ? `<div style="color:#6b7280;font-size:12px">📍 ${node.city}</div>` : ""}
-            ${node.mgmtIp ? `<div style="font-size:12px">IP: <code>${node.mgmtIp}</code></div>` : ""}
-            <div style="font-size:12px">Tipo: ${node.nodeType}</div>
-            <div style="margin-top:4px">
-              <span style="background:${node.active ? "#22c55e" : "#ef4444"};color:white;padding:2px 6px;border-radius:4px;font-size:11px">
-                ${node.active ? "Ativo" : "Inativo"}
-              </span>
-            </div>
-          </div>
-        `;
-        infoWindowRef.current!.setContent(content);
-        infoWindowRef.current!.open(map, marker);
-      });
-
-      markersRef.current.set(node.id, marker);
-    });
-
-    // Draw links
-    links.forEach((link) => {
-      const fromNode = nodes.find((n) => n.id === link.fromNodeId);
-      const toNode = nodes.find((n) => n.id === link.toNodeId);
-      if (!fromNode?.lat || !fromNode?.lng || !toNode?.lat || !toNode?.lng) return;
-
-      const linkColors: Record<LinkType, string> = {
-        fiber: "#3b82f6",
-        radio: "#f59e0b",
-        copper: "#8b5cf6",
-        vpn: "#06b6d4",
-      };
-
-      const polyline = new window.google.maps.Polyline({
-        path: [
-          { lat: fromNode.lat, lng: fromNode.lng },
-          { lat: toNode.lat, lng: toNode.lng },
-        ],
-        geodesic: true,
-        strokeColor: link.active ? linkColors[link.linkType] : "#6b7280",
-        strokeOpacity: link.active ? 0.85 : 0.4,
-        strokeWeight: link.active ? 3 : 2,
-        map,
-      });
-
-      polyline.addListener("click", () => {
-        const midLat = (fromNode.lat! + toNode.lat!) / 2;
-        const midLng = (fromNode.lng! + toNode.lng!) / 2;
-        const content = `
-          <div style="font-family:sans-serif;min-width:200px;padding:4px">
-            <div style="font-weight:700;font-size:13px;margin-bottom:6px">
-              ${fromNode.name} → ${toNode.name}
-            </div>
-            <div style="font-size:12px">Tipo: <b>${link.linkType}</b></div>
-            ${link.fromPortName ? `<div style="font-size:12px">Porta origem: ${link.fromPortName}</div>` : ""}
-            ${link.toPortName ? `<div style="font-size:12px">Porta destino: ${link.toPortName}</div>` : ""}
-            ${link.capacityBps ? `<div style="font-size:12px">Capacidade: ${formatBps(link.capacityBps)}</div>` : ""}
-            <div style="margin-top:4px">
-              <span style="background:${link.active ? "#22c55e" : "#ef4444"};color:white;padding:2px 6px;border-radius:4px;font-size:11px">
-                ${link.active ? "Ativo" : "Inativo"}
-              </span>
-            </div>
-          </div>
-        `;
-        infoWindowRef.current!.setContent(content);
-        infoWindowRef.current!.open(map);
-        infoWindowRef.current!.setPosition({ lat: midLat, lng: midLng });
-      });
-
-      polylinesRef.current.set(link.id, polyline);
-    });
-
-    // Fit bounds to all nodes with coordinates
-    const nodesWithCoords = nodes.filter((n) => n.lat && n.lng);
-    if (nodesWithCoords.length > 0) {
-      const bounds = new window.google.maps.LatLngBounds();
-      nodesWithCoords.forEach((n) => bounds.extend({ lat: n.lat!, lng: n.lng! }));
-      map.fitBounds(bounds, 60);
-    }
-  }, [nodes, links]);
-
-  useEffect(() => {
-    if (mapRef.current) renderMap();
-  }, [nodes, links, renderMap]);
-
   // ─── Node handlers ──────────────────────────────────────────────────────────
   function openCreateNode() {
     setEditingNode(null);
     setNodeForm(emptyNodeForm());
     setNodeDialog(true);
   }
-
   function openEditNode(node: NetworkNode) {
     setEditingNode(node);
     setNodeForm({
@@ -327,7 +249,6 @@ export default function NetworkMap() {
     });
     setNodeDialog(true);
   }
-
   function submitNode() {
     const payload = {
       name: nodeForm.name,
@@ -351,7 +272,6 @@ export default function NetworkMap() {
     setLinkForm(emptyLinkForm());
     setLinkDialog(true);
   }
-
   function openEditLink(link: NetworkLink) {
     setEditingLink(link);
     setLinkForm({
@@ -366,7 +286,6 @@ export default function NetworkMap() {
     });
     setLinkDialog(true);
   }
-
   function submitLink() {
     const payload = {
       fromNodeId: parseInt(linkForm.fromNodeId),
@@ -387,54 +306,61 @@ export default function NetworkMap() {
 
   // ─── Import from LibreNMS ────────────────────────────────────────────────────
   function importDevice(device: { deviceId: number; name: string; mgmtIp: string; location: string }) {
-    const doCreate = (lat?: number, lng?: number) => {
-      createNode.mutate({
-        name: device.name,
-        city: device.location || undefined,
-        lat,
-        lng,
-        nodeType: "router",
-        mgmtIp: device.mgmtIp,
-        deviceId: device.deviceId,
+    // Geocode via Nominatim (OpenStreetMap free geocoder — no API key required)
+    const address = device.location || device.name;
+    const query = encodeURIComponent(`${address}, Pernambuco, Brasil`);
+    fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`)
+      .then((r) => r.json())
+      .then((results) => {
+        const lat = results[0] ? parseFloat(results[0].lat) : undefined;
+        const lng = results[0] ? parseFloat(results[0].lon) : undefined;
+        createNode.mutate({
+          name: device.name,
+          city: device.location || undefined,
+          lat,
+          lng,
+          nodeType: "router",
+          mgmtIp: device.mgmtIp,
+          deviceId: device.deviceId,
+        });
+        toast.success(`${device.name} importado${lat ? " com localização" : " (sem coordenadas — edite manualmente)"}`);
+      })
+      .catch(() => {
+        createNode.mutate({
+          name: device.name,
+          city: device.location || undefined,
+          nodeType: "router",
+          mgmtIp: device.mgmtIp,
+          deviceId: device.deviceId,
+        });
+        toast.success(`${device.name} importado (sem coordenadas — edite manualmente)`);
       });
-      toast.success(`${device.name} importado${lat ? " com localização" : " (sem coordenadas — edite manualmente)"}`);
-    };
-    // Tenta geocoding se o Google Maps já estiver carregado, caso contrário importa sem coordenadas
-    if (window.google?.maps?.Geocoder) {
-      const address = device.location || device.name;
-      const geocoder = new window.google.maps.Geocoder();
-      geocoder.geocode({ address: `${address}, Pernambuco, Brasil` }, (results, status) => {
-        const lat = status === "OK" && results?.[0] ? results[0].geometry.location.lat() : undefined;
-        const lng = status === "OK" && results?.[0] ? results[0].geometry.location.lng() : undefined;
-        doCreate(lat, lng);
-      });
-    } else {
-      doCreate();
-    }
   }
 
-  // ─── Geocode city for node form ──────────────────────────────────────────────
+  // ─── Geocode city for node form (via Nominatim) ──────────────────────────────
   function geocodeCity() {
-    if (!nodeForm.city || !window.google) return;
-    const geocoder = new window.google.maps.Geocoder();
-    geocoder.geocode({ address: `${nodeForm.city}, Pernambuco, Brasil` }, (results, status) => {
-      if (status === "OK" && results?.[0]) {
-        setNodeForm((f) => ({
-          ...f,
-          lat: results[0].geometry.location.lat().toFixed(6),
-          lng: results[0].geometry.location.lng().toFixed(6),
-        }));
-        toast.success("Coordenadas preenchidas automaticamente");
-      } else {
-        toast.error("Cidade não encontrada — preencha as coordenadas manualmente");
-      }
-    });
+    if (!nodeForm.city) return;
+    const query = encodeURIComponent(`${nodeForm.city}, Pernambuco, Brasil`);
+    fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`)
+      .then((r) => r.json())
+      .then((results) => {
+        if (results[0]) {
+          setNodeForm((f) => ({
+            ...f,
+            lat: parseFloat(results[0].lat).toFixed(6),
+            lng: parseFloat(results[0].lon).toFixed(6),
+          }));
+          toast.success("Coordenadas preenchidas automaticamente");
+        } else {
+          toast.error("Cidade não encontrada — preencha as coordenadas manualmente");
+        }
+      })
+      .catch(() => toast.error("Erro ao buscar coordenadas"));
   }
 
+  // ─── Derived values ──────────────────────────────────────────────────────────
   const nodesWithCoords = nodes.filter((n) => n.lat && n.lng);
-  const center = nodesWithCoords.length > 0
-    ? { lat: nodesWithCoords[0].lat!, lng: nodesWithCoords[0].lng! }
-    : { lat: -8.89, lng: -36.49 }; // Garanhuns, PE
+  const defaultCenter: [number, number] = [-8.89, -36.49]; // Garanhuns, PE
 
   return (
     <div className="flex flex-col" style={{ height: "calc(100vh - 0px)" }}>
@@ -474,9 +400,9 @@ export default function NetworkMap() {
       </div>
 
       {/* Map */}
-      <div className="relative" style={{ height: "calc(100vh - 130px)", minHeight: "400px" }}>
+      <div className="relative flex-1" style={{ minHeight: "400px" }}>
         {nodes.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-[1000] pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
               <MapPin className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
               <p className="font-semibold mb-1">Nenhum nó cadastrado</p>
@@ -488,17 +414,87 @@ export default function NetworkMap() {
             </div>
           </div>
         )}
-        <div style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}>
-          <MapView
-            className="w-full h-full"
-            initialCenter={center}
-            initialZoom={10}
-            onMapReady={(map) => {
-              mapRef.current = map;
-              renderMap();
-            }}
+
+        <MapContainer
+          center={defaultCenter}
+          zoom={9}
+          style={{ width: "100%", height: "100%" }}
+          scrollWheelZoom={true}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-        </div>
+
+          {/* Fit bounds when nodes change */}
+          {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodesWithCoords as NetworkNode[]} />}
+
+          {/* Draw links (polylines) */}
+          {links.map((link) => {
+            const fromNode = nodes.find((n) => n.id === link.fromNodeId);
+            const toNode = nodes.find((n) => n.id === link.toNodeId);
+            if (!fromNode?.lat || !fromNode?.lng || !toNode?.lat || !toNode?.lng) return null;
+            const color = link.active ? LINK_COLORS[link.linkType as LinkType] : "#6b7280";
+            const positions: [number, number][] = [
+              [fromNode.lat, fromNode.lng],
+              [toNode.lat, toNode.lng],
+            ];
+            return (
+              <Polyline
+                key={link.id}
+                positions={positions}
+                pathOptions={{
+                  color,
+                  weight: link.active ? 3 : 2,
+                  opacity: link.active ? 0.85 : 0.4,
+                  dashArray: link.active ? undefined : "6 4",
+                }}
+              >
+                <Popup>
+                  <div style={{ fontFamily: "sans-serif", minWidth: 200 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                      {fromNode.name} → {toNode.name}
+                    </div>
+                    <div style={{ fontSize: 12 }}>Tipo: <b>{link.linkType}</b></div>
+                    {link.fromPortName && <div style={{ fontSize: 12 }}>Porta origem: {link.fromPortName}</div>}
+                    {link.toPortName && <div style={{ fontSize: 12 }}>Porta destino: {link.toPortName}</div>}
+                    {link.capacityBps && <div style={{ fontSize: 12 }}>Capacidade: {formatBps(link.capacityBps)}</div>}
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ background: link.active ? "#22c55e" : "#ef4444", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>
+                        {link.active ? "Ativo" : "Inativo"}
+                      </span>
+                    </div>
+                  </div>
+                </Popup>
+              </Polyline>
+            );
+          })}
+
+          {/* Draw nodes (markers) */}
+          {nodesWithCoords.map((node) => (
+            <Marker
+              key={node.id}
+              position={[node.lat!, node.lng!]}
+              icon={makeNodeIcon(node as NetworkNode)}
+            >
+              <Popup>
+                <div style={{ fontFamily: "sans-serif", minWidth: 180 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                    {NODE_ICONS[node.nodeType as NodeType]} {node.name}
+                  </div>
+                  {node.city && <div style={{ color: "#6b7280", fontSize: 12 }}>📍 {node.city}</div>}
+                  {node.mgmtIp && <div style={{ fontSize: 12 }}>IP: <code>{node.mgmtIp}</code></div>}
+                  <div style={{ fontSize: 12 }}>Tipo: {node.nodeType}</div>
+                  <div style={{ marginTop: 4 }}>
+                    <span style={{ background: node.active ? "#22c55e" : "#ef4444", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>
+                      {node.active ? "Ativo" : "Inativo"}
+                    </span>
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
       </div>
 
       {/* ─── Sidebar ─────────────────────────────────────────────────────────── */}
@@ -509,7 +505,6 @@ export default function NetworkMap() {
               <Network className="w-4 h-4" /> Gerenciar Topologia
             </SheetTitle>
           </SheetHeader>
-
           <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as "nodes" | "links")} className="mt-4">
             <TabsList className="w-full">
               <TabsTrigger value="nodes" className="flex-1">
@@ -571,10 +566,10 @@ export default function NetworkMap() {
               {links.map((link) => {
                 const fromNode = nodes.find((n) => n.id === link.fromNodeId);
                 const toNode = nodes.find((n) => n.id === link.toNodeId);
-                const linkColors: Record<LinkType, string> = { fiber: "bg-blue-500", radio: "bg-amber-500", copper: "bg-purple-500", vpn: "bg-cyan-500" };
+                const linkColorClasses: Record<LinkType, string> = { fiber: "bg-blue-500", radio: "bg-amber-500", copper: "bg-purple-500", vpn: "bg-cyan-500" };
                 return (
                   <div key={link.id} className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card/50 hover:bg-card transition-colors">
-                    <span className={`w-2 h-2 rounded-full ${linkColors[link.linkType as LinkType]} flex-shrink-0`} />
+                    <span className={`w-2 h-2 rounded-full ${linkColorClasses[link.linkType as LinkType]} flex-shrink-0`} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">
                         {fromNode?.name || "?"} → {toNode?.name || "?"}
@@ -655,8 +650,8 @@ export default function NetworkMap() {
               </div>
             </div>
             <div>
-              <Label>Device ID LibreNMS</Label>
-              <Input value={nodeForm.deviceId} onChange={(e) => setNodeForm((f) => ({ ...f, deviceId: e.target.value }))} placeholder="1" type="number" />
+              <Label>Device ID (LibreNMS)</Label>
+              <Input value={nodeForm.deviceId} onChange={(e) => setNodeForm((f) => ({ ...f, deviceId: e.target.value }))} placeholder="Ex: 42" type="number" />
             </div>
           </div>
           <DialogFooter>
@@ -677,18 +672,18 @@ export default function NetworkMap() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Nó de Origem *</Label>
+                <Label>Nó Origem *</Label>
                 <Select value={linkForm.fromNodeId} onValueChange={(v) => setLinkForm((f) => ({ ...f, fromNodeId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>
                     {nodes.map((n) => <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Nó de Destino *</Label>
+                <Label>Nó Destino *</Label>
                 <Select value={linkForm.toNodeId} onValueChange={(v) => setLinkForm((f) => ({ ...f, toNodeId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                   <SelectContent>
                     {nodes.map((n) => <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>)}
                   </SelectContent>
