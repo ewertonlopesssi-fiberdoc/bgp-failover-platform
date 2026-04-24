@@ -165,3 +165,10 @@
 - [x] Auto-refresh a cada 1 minuto
 - [x] Modal/expansão de gráfico completo ao clicar no card
 - [x] Build e deploy em produção
+
+## Fase 15 — Modo Compacto na Análise de Tráfego
+
+- [x] Adicionar toggle de visualização (Normal / Compacto) na página TrafficAnalysis
+- [x] Implementar card compacto estilo badge com nome, IN/OUT e status em linha
+- [x] Persistir preferência de visualização no localStorage
+- [x] Build e deploy em produção
