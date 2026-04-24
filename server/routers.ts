@@ -813,8 +813,9 @@ export const appRouter = router({
             const parts = line.trim().split(/\s+/);
             if (parts.length < 3) continue;
             const ts = parseInt(parts[0].replace(":", ""));
-            const inOctets = parseFloat(parts[1]);
-            const outOctets = parseFloat(parts[2]);
+            // rrdtool pode usar vírgula como separador decimal (locale pt_BR/europeu)
+            const inOctets = parseFloat(parts[1].replace(",", "."));
+            const outOctets = parseFloat(parts[2].replace(",", "."));
             if (isNaN(ts) || isNaN(inOctets) || isNaN(outOctets)) continue;
             historyPoints.push({ ts, inBps: inOctets * 8, outBps: outOctets * 8 });
           }
