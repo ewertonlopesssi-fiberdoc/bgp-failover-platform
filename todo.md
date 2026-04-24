@@ -199,3 +199,7 @@
 - [x] Build e deploy em produção
 
 - [x] Atualizar TrafficAnalysis.tsx para agrupar interfaces dedicadas por cidade nos modos normal e compacto
+
+## Fase 18 — Limpeza de interfaces
+- [x] Remover UPLINK-SW-6730 (portId 4), PTP-SW2 (portId 5), UPLINK-CRS317 (portId 39) e ONLINE-NET (portId 117) do TrafficAnalysis.tsx
+- [x] Build e deploy em produção

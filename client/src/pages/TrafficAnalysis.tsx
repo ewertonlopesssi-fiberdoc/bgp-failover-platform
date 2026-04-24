@@ -46,9 +46,6 @@ const UPSTREAM_INTERFACES: InterfaceConfig[] = [
 ];
 
 const DEDICATED_INTERFACES: InterfaceConfig[] = [
-  { portId: 4,   ifName: "100GE0/5/0",      label: "UPLINK-SW-6730",         color: "#f97316" },
-  { portId: 5,   ifName: "100GE0/5/1",       label: "100GE0/5/1",             color: "#ef4444" },
-  { portId: 39,  ifName: "25GE0/5/35",       label: "UPLINK-CRS317",          color: "#ec4899" },
   { portId: 130, ifName: "Eth-Trunk10.2263", label: "SPEEDNET-PEDRA",         color: "#14b8a6" },
   { portId: 90,  ifName: "Eth-Trunk3.2264",  label: "TOP-TELECOM-TACAIMBO",   color: "#84cc16" },
   { portId: 106, ifName: "Eth-Trunk3.2265",  label: "CENTRAL-NET-ARCOVERDE",  color: "#a3e635" },
@@ -60,7 +57,6 @@ const DEDICATED_INTERFACES: InterfaceConfig[] = [
   { portId: 108, ifName: "Eth-Trunk3.2272",  label: "HNET-META",              color: "#86efac" },
   { portId: 112, ifName: "Eth-Trunk3.2273",  label: "HNET-META-BELO-JARDIM",  color: "#fde68a" },
   { portId: 118, ifName: "Eth-Trunk3.2276",  label: "VIPNET-ARCOVERDE",       color: "#a5b4fc" },
-  { portId: 117, ifName: "Vlanif2275",        label: "ONLINE-NET",             color: "#fca5a5" },
 ];
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
