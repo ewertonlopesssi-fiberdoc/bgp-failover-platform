@@ -693,6 +693,7 @@ export const appRouter = router({
         ifName: z.string(),
         label: z.string().min(1).max(150),
         category: z.enum(["upstream", "dedicated"]),
+        city: z.string().max(100).optional(),
         contractedBps: z.number().min(0).default(0),
         alertThreshold: z.number().min(1).max(100).default(80),
         alertEnabled: z.boolean().default(false),

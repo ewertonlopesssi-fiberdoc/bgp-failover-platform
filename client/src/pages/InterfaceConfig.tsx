@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Settings, Save, Bell, BellOff, RefreshCw, Info,
+  Settings, Save, Bell, BellOff, RefreshCw, Info, MapPin, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,20 +30,22 @@ function formatBpsDisplay(bps: number): string {
   return `${bps} bps`;
 }
 
-// ─── Linha editável ───────────────────────────────────────────────────────────
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 interface InterfaceRow {
   id: number;
   portId: number;
   ifName: string;
   label: string;
   category: "upstream" | "dedicated";
+  city?: string | null;
   contractedBps: number;
   alertThreshold: number;
   alertEnabled: boolean;
   lastAlertAt: Date | null;
 }
 
-function InterfaceRow({
+// ─── Linha editável ───────────────────────────────────────────────────────────
+function InterfaceRowItem({
   row,
   onSave,
 }: {
@@ -52,6 +54,7 @@ function InterfaceRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(row.label);
+  const [city, setCity] = useState(row.city || "");
   const [contractedInput, setContractedInput] = useState(
     row.contractedBps > 0 ? formatBpsDisplay(row.contractedBps).replace(" ", "") : ""
   );
@@ -67,6 +70,7 @@ function InterfaceRow({
         ifName: row.ifName,
         label: label.trim() || row.ifName,
         category: row.category,
+        city: city.trim() || undefined,
         contractedBps: parseBps(contractedInput),
         alertThreshold: Math.min(100, Math.max(1, parseInt(threshold) || 80)),
         alertEnabled,
@@ -79,6 +83,7 @@ function InterfaceRow({
 
   const handleCancel = () => {
     setLabel(row.label);
+    setCity(row.city || "");
     setContractedInput(row.contractedBps > 0 ? formatBpsDisplay(row.contractedBps).replace(" ", "") : "");
     setThreshold(String(row.alertThreshold));
     setAlertEnabled(row.alertEnabled);
@@ -90,18 +95,10 @@ function InterfaceRow({
       {/* Interface */}
       <td className="px-3 py-2">
         <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full flex-shrink-0 ${row.category === "upstream" ? "bg-blue-500" : "bg-orange-500"}`}
-          />
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${row.category === "upstream" ? "bg-blue-500" : "bg-orange-500"}`} />
           <div>
             <p className="text-white text-xs font-mono">{row.ifName}</p>
-            <Badge
-              className={`text-[10px] px-1 py-0 mt-0.5 ${
-                row.category === "upstream"
-                  ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                  : "bg-orange-500/20 text-orange-400 border-orange-500/30"
-              }`}
-            >
+            <Badge className={`text-[10px] px-1 py-0 mt-0.5 ${row.category === "upstream" ? "bg-blue-500/20 text-blue-400 border-blue-500/30" : "bg-orange-500/20 text-orange-400 border-orange-500/30"}`}>
               {row.category === "upstream" ? "Upstream" : "Dedicado"}
             </Badge>
           </div>
@@ -114,11 +111,27 @@ function InterfaceRow({
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            className="h-7 text-xs bg-gray-900 border-gray-600 text-white w-full max-w-[200px]"
+            className="h-7 text-xs bg-gray-900 border-gray-600 text-white w-full max-w-[180px]"
             placeholder="Nome do cliente"
           />
         ) : (
           <span className="text-white text-sm font-medium">{row.label}</span>
+        )}
+      </td>
+
+      {/* Cidade */}
+      <td className="px-3 py-2">
+        {editing ? (
+          <Input
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            className="h-7 text-xs bg-gray-900 border-gray-600 text-white w-28"
+            placeholder="ex: Arcoverde"
+          />
+        ) : (
+          <span className={`text-sm flex items-center gap-1 ${row.city ? "text-emerald-400" : "text-gray-600"}`}>
+            {row.city ? <><MapPin className="w-3 h-3" />{row.city}</> : "—"}
+          </span>
         )}
       </td>
 
@@ -132,7 +145,6 @@ function InterfaceRow({
               className="h-7 text-xs bg-gray-900 border-gray-600 text-white w-24"
               placeholder="ex: 1G, 500M"
             />
-            <span className="text-gray-500 text-xs">Gbps/Mbps</span>
           </div>
         ) : (
           <span className={`text-sm font-mono ${row.contractedBps > 0 ? "text-cyan-400" : "text-gray-600"}`}>
@@ -165,11 +177,7 @@ function InterfaceRow({
         {editing ? (
           <button
             onClick={() => setAlertEnabled(!alertEnabled)}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all ${
-              alertEnabled
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "bg-gray-700 text-gray-400 border border-gray-600"
-            }`}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all ${alertEnabled ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-gray-700 text-gray-400 border border-gray-600"}`}
           >
             {alertEnabled ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
             {alertEnabled ? "Ativo" : "Inativo"}
@@ -198,37 +206,75 @@ function InterfaceRow({
       <td className="px-3 py-2">
         {editing ? (
           <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              onClick={handleSave}
-              disabled={saving}
-              className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2"
-            >
+            <Button size="sm" onClick={handleSave} disabled={saving} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2">
               {saving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
               <span className="ml-1">Salvar</span>
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleCancel}
-              className="h-7 text-xs border-gray-600 text-gray-400 bg-transparent px-2"
-            >
+            <Button size="sm" variant="outline" onClick={handleCancel} className="h-7 text-xs border-gray-600 text-gray-400 bg-transparent px-2">
               Cancelar
             </Button>
           </div>
         ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing(true)}
-            className="h-7 text-xs border-gray-700 text-gray-400 hover:text-white bg-transparent px-2"
-          >
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)} className="h-7 text-xs border-gray-700 text-gray-400 hover:text-white bg-transparent px-2">
             <Settings className="w-3 h-3 mr-1" />
             Editar
           </Button>
         )}
       </td>
     </tr>
+  );
+}
+
+// ─── Grupo de cidade colapsável ───────────────────────────────────────────────
+function CityGroup({
+  city,
+  rows,
+  onSave,
+}: {
+  city: string;
+  rows: InterfaceRow[];
+  onSave: (data: any) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(true);
+  const totalContracted = rows.reduce((s, r) => s + r.contractedBps, 0);
+
+  return (
+    <div className="mb-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-800/60 hover:bg-gray-800 rounded-t border border-gray-700 transition-colors"
+      >
+        {open ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+        <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+        <span className="text-sm font-semibold text-white">{city}</span>
+        <span className="text-xs text-gray-400 bg-gray-700 px-1.5 py-0.5 rounded">{rows.length} cliente{rows.length !== 1 ? "s" : ""}</span>
+        {totalContracted > 0 && (
+          <span className="text-xs text-cyan-400 ml-auto">{formatBpsDisplay(totalContracted)} total contratado</span>
+        )}
+      </button>
+      {open && (
+        <div className="border border-t-0 border-gray-700 rounded-b overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 bg-gray-800/30">
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Interface</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Nome / Cliente</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Cidade</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Plano Contratado</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Threshold</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Alerta Telegram</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <InterfaceRowItem key={row.portId} row={row} onSave={onSave} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -248,6 +294,20 @@ export default function InterfaceConfigPage() {
   const upstream = (configs || []).filter((c) => c.category === "upstream");
   const dedicated = (configs || []).filter((c) => c.category === "dedicated");
 
+  // Agrupar clientes dedicados por cidade
+  const cityGroups: Record<string, InterfaceRow[]> = {};
+  const noCity: InterfaceRow[] = [];
+  for (const row of dedicated) {
+    const c = row.city?.trim();
+    if (c) {
+      if (!cityGroups[c]) cityGroups[c] = [];
+      cityGroups[c].push(row as InterfaceRow);
+    } else {
+      noCity.push(row as InterfaceRow);
+    }
+  }
+  const sortedCities = Object.keys(cityGroups).sort();
+
   const handleSave = async (data: any) => {
     await upsertMutation.mutateAsync(data);
   };
@@ -263,7 +323,7 @@ export default function InterfaceConfigPage() {
           <h1 className="text-lg font-bold text-white">Configuração de Interfaces</h1>
         </div>
         <p className="text-gray-400 text-sm">
-          Gerencie nomes, planos contratados e alertas de saturação por interface.
+          Gerencie nomes, cidades, planos contratados e alertas de saturação por interface.
         </p>
         <div className="mt-3 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800 rounded px-2.5 py-1.5">
@@ -282,8 +342,8 @@ export default function InterfaceConfigPage() {
           <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Carregando...
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Upstream */}
+        <div className="space-y-8">
+          {/* ── Upstream ── */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full bg-blue-500" />
@@ -295,7 +355,8 @@ export default function InterfaceConfigPage() {
                 <thead>
                   <tr className="border-b border-gray-800 bg-gray-800/50">
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Interface</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Nome / Cliente</th>
+                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Nome / Provedor</th>
+                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Cidade</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Plano Contratado</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Threshold</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Alerta Telegram</th>
@@ -304,47 +365,29 @@ export default function InterfaceConfigPage() {
                 </thead>
                 <tbody>
                   {upstream.map((row) => (
-                    <InterfaceRow
-                      key={row.portId}
-                      row={row as InterfaceRow}
-                      onSave={handleSave}
-                    />
+                    <InterfaceRowItem key={row.portId} row={row as InterfaceRow} onSave={handleSave} />
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Dedicados */}
+          {/* ── Clientes Dedicados por Cidade ── */}
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-orange-500" />
               <h2 className="text-sm font-semibold text-white">Clientes Dedicados</h2>
               <span className="text-xs text-orange-400 bg-orange-500/20 px-1.5 py-0.5 rounded">{dedicated.length}</span>
+              <span className="text-xs text-gray-500 ml-1">· {sortedCities.length} cidades</span>
             </div>
-            <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-800 bg-gray-800/50">
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Interface</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Nome / Cliente</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Plano Contratado</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Threshold</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Alerta Telegram</th>
-                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dedicated.map((row) => (
-                    <InterfaceRow
-                      key={row.portId}
-                      row={row as InterfaceRow}
-                      onSave={handleSave}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+
+            {sortedCities.map((city) => (
+              <CityGroup key={city} city={city} rows={cityGroups[city]} onSave={handleSave} />
+            ))}
+
+            {noCity.length > 0 && (
+              <CityGroup city="Sem cidade definida" rows={noCity} onSave={handleSave} />
+            )}
           </div>
         </div>
       )}

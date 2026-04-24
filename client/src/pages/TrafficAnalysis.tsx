@@ -31,6 +31,7 @@ interface InterfaceConfig {
   ifName: string;
   label: string;
   color: string;
+  city?: string;
 }
 
 // ─── Configuração das interfaces ──────────────────────────────────────────────
@@ -45,24 +46,21 @@ const UPSTREAM_INTERFACES: InterfaceConfig[] = [
 ];
 
 const DEDICATED_INTERFACES: InterfaceConfig[] = [
-  { portId: 4,   ifName: "100GE0/5/0",      label: "UPLINK-SW-6730",   color: "#f97316" },
-  { portId: 5,   ifName: "100GE0/5/1",       label: "100GE0/5/1",       color: "#ef4444" },
-  { portId: 39,  ifName: "25GE0/5/35",       label: "25GE0/5/35",       color: "#ec4899" },
-  { portId: 130, ifName: "Eth-Trunk10.2263", label: "Eth-Trunk10.2263", color: "#14b8a6" },
-  { portId: 90,  ifName: "Eth-Trunk3.2264",  label: "Eth-Trunk3.2264",  color: "#84cc16" },
-  { portId: 106, ifName: "Eth-Trunk3.2265",  label: "Eth-Trunk3.2265",  color: "#a3e635" },
-  { portId: 102, ifName: "Eth-Trunk3.2267",  label: "Eth-Trunk3.2267",  color: "#fbbf24" },
-  { portId: 103, ifName: "Eth-Trunk3.2268",  label: "Eth-Trunk3.2268",  color: "#fb923c" },
-  { portId: 104, ifName: "Eth-Trunk3.2269",  label: "Eth-Trunk3.2269",  color: "#f472b6" },
-  { portId: 105, ifName: "Eth-Trunk3.2270",  label: "Eth-Trunk3.2270",  color: "#c084fc" },
-  { portId: 107, ifName: "Eth-Trunk3.2271",  label: "Eth-Trunk3.2271",  color: "#67e8f9" },
-  { portId: 108, ifName: "Eth-Trunk3.2272",  label: "Eth-Trunk3.2272",  color: "#86efac" },
-  { portId: 112, ifName: "Eth-Trunk3.2273",  label: "Eth-Trunk3.2273",  color: "#fde68a" },
-  { portId: 118, ifName: "Eth-Trunk3.2276",  label: "Eth-Trunk3.2276",  color: "#a5b4fc" },
-  { portId: 88,  ifName: "Eth-Trunk3.5000",  label: "Eth-Trunk3.5000",  color: "#5eead4" },
-  { portId: 91,  ifName: "Eth-Trunk3.3262",  label: "Eth-Trunk3.3262",  color: "#d8b4fe" },
-  { portId: 117, ifName: "Vlanif2275",        label: "Vlanif2275",       color: "#fca5a5" },
-  { portId: 83,  ifName: "Vlanif911",         label: "Vlanif911",        color: "#93c5fd" },
+  { portId: 4,   ifName: "100GE0/5/0",      label: "UPLINK-SW-6730",         color: "#f97316" },
+  { portId: 5,   ifName: "100GE0/5/1",       label: "100GE0/5/1",             color: "#ef4444" },
+  { portId: 39,  ifName: "25GE0/5/35",       label: "UPLINK-CRS317",          color: "#ec4899" },
+  { portId: 130, ifName: "Eth-Trunk10.2263", label: "SPEEDNET-PEDRA",         color: "#14b8a6" },
+  { portId: 90,  ifName: "Eth-Trunk3.2264",  label: "TOP-TELECOM-TACAIMBO",   color: "#84cc16" },
+  { portId: 106, ifName: "Eth-Trunk3.2265",  label: "CENTRAL-NET-ARCOVERDE",  color: "#a3e635" },
+  { portId: 102, ifName: "Eth-Trunk3.2267",  label: "RB-NET",                 color: "#fbbf24" },
+  { portId: 103, ifName: "Eth-Trunk3.2268",  label: "RB-NET 2",               color: "#fb923c" },
+  { portId: 104, ifName: "Eth-Trunk3.2269",  label: "CONECTA-TELECOM-IPv4",   color: "#f472b6" },
+  { portId: 105, ifName: "Eth-Trunk3.2270",  label: "CONECTA-TELECOM-IPv6",   color: "#c084fc" },
+  { portId: 107, ifName: "Eth-Trunk3.2271",  label: "VCOMNET-BELO-JARDIM",    color: "#67e8f9" },
+  { portId: 108, ifName: "Eth-Trunk3.2272",  label: "HNET-META",              color: "#86efac" },
+  { portId: 112, ifName: "Eth-Trunk3.2273",  label: "HNET-META-BELO-JARDIM",  color: "#fde68a" },
+  { portId: 118, ifName: "Eth-Trunk3.2276",  label: "VIPNET-ARCOVERDE",       color: "#a5b4fc" },
+  { portId: 117, ifName: "Vlanif2275",        label: "ONLINE-NET",             color: "#fca5a5" },
 ];
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────
@@ -328,6 +326,66 @@ function PortCardCompact({ config, port, onClick }: { config: InterfaceConfig; p
   );
 }
 
+// ─── Grupo de cidade (dedicados) ─────────────────────────────────────────────
+function DedicatedCityGroup({
+  city, interfaces, portMap, viewMode, onSelect,
+}: {
+  city: string;
+  interfaces: InterfaceConfig[];
+  portMap: Map<number, Port>;
+  viewMode: ViewMode;
+  onSelect: (cfg: InterfaceConfig) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const totalIn = interfaces.reduce((s, cfg) => {
+    const p = portMap.get(cfg.portId);
+    return s + (p ? (p.ifInOctets_rate || 0) * 8 : 0);
+  }, 0);
+  const totalOut = interfaces.reduce((s, cfg) => {
+    const p = portMap.get(cfg.portId);
+    return s + (p ? (p.ifOutOctets_rate || 0) * 8 : 0);
+  }, 0);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 bg-gray-800/60 hover:bg-gray-800 rounded-t border border-gray-700 transition-colors text-left"
+      >
+        <span className="text-gray-400 text-xs">{open ? "▾" : "▸"}</span>
+        <span className="text-xs font-semibold text-emerald-400">📍 {city}</span>
+        <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">{interfaces.length}</span>
+        <span className="ml-auto text-[10px] font-mono text-gray-500">
+          ↓{formatBps(totalIn)} ↑{formatBps(totalOut)}
+        </span>
+      </button>
+      {open && (
+        <div className={`border border-t-0 border-gray-700 rounded-b p-2 ${
+          viewMode === "compact" ? "flex flex-col gap-1" : "grid grid-cols-1 gap-2"
+        }`}>
+          {interfaces.map((cfg) =>
+            viewMode === "compact" ? (
+              <PortCardCompact
+                key={cfg.portId}
+                config={cfg}
+                port={portMap.get(cfg.portId)}
+                onClick={() => onSelect(cfg)}
+              />
+            ) : (
+              <PortCardNormal
+                key={cfg.portId}
+                config={cfg}
+                port={portMap.get(cfg.portId)}
+                onClick={() => onSelect(cfg)}
+              />
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Seção de interfaces ──────────────────────────────────────────────────────
 function InterfaceSection({
   title, subtitle, badgeColor, badgeTextColor, interfaces, portMap, viewMode, onSelect,
@@ -428,15 +486,29 @@ export default function TrafficAnalysis() {
     (ports || []).map((p: Port) => [Number(p.port_id), p])
   );
 
-  // Mesclar labels do banco com as configurações hardcoded
+  // Mesclar labels e cidade do banco com as configurações hardcoded
   const upstreamInterfaces: InterfaceConfig[] = UPSTREAM_INTERFACES.map((cfg) => {
     const dbCfg = ifConfigMap.get(cfg.portId);
-    return dbCfg ? { ...cfg, label: dbCfg.label } : cfg;
+    return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
   });
   const dedicatedInterfaces: InterfaceConfig[] = DEDICATED_INTERFACES.map((cfg) => {
     const dbCfg = ifConfigMap.get(cfg.portId);
-    return dbCfg ? { ...cfg, label: dbCfg.label } : cfg;
+    return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
   });
+
+  // Agrupar dedicados por cidade
+  const dedicatedByCityMap: Record<string, InterfaceConfig[]> = {};
+  const dedicatedNoCity: InterfaceConfig[] = [];
+  for (const cfg of dedicatedInterfaces) {
+    const c = cfg.city?.trim();
+    if (c) {
+      if (!dedicatedByCityMap[c]) dedicatedByCityMap[c] = [];
+      dedicatedByCityMap[c].push(cfg);
+    } else {
+      dedicatedNoCity.push(cfg);
+    }
+  }
+  const dedicatedCities = Object.keys(dedicatedByCityMap).sort();
 
   const upstreamInTotal = upstreamInterfaces.reduce((acc, cfg) => {
     const p = portMap.get(cfg.portId);
@@ -542,16 +614,41 @@ export default function TrafficAnalysis() {
           viewMode={viewMode}
           onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
         />
-        <InterfaceSection
-          title="Clientes Dedicados"
-          subtitle="Interfaces de clientes com acesso dedicado"
-          badgeColor="bg-orange-500"
-          badgeTextColor="text-orange-400 bg-orange-500/20"
-          interfaces={dedicatedInterfaces}
-          portMap={portMap}
-          viewMode={viewMode}
-          onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
-        />
+        {/* Coluna dedicados — agrupada por cidade */}
+        <div className="flex flex-col overflow-hidden">
+          <div className="sticky top-0 bg-gray-900/95 backdrop-blur border-b border-gray-800 px-4 py-2.5 z-10 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full animate-pulse bg-orange-500" />
+              <h2 className="text-white font-semibold text-sm">Clientes Dedicados</h2>
+              <span className="text-xs px-1.5 py-0 rounded font-medium text-orange-400 bg-orange-500/20">
+                {dedicatedInterfaces.length}
+              </span>
+              <span className="text-gray-600 text-xs">· {dedicatedCities.length} cidades</span>
+            </div>
+            <p className="text-gray-500 text-xs mt-0.5">Interfaces de clientes com acesso dedicado</p>
+          </div>
+          <div className="overflow-y-auto flex-1 p-3 space-y-3">
+            {dedicatedCities.map((city) => (
+              <DedicatedCityGroup
+                key={city}
+                city={city}
+                interfaces={dedicatedByCityMap[city]}
+                portMap={portMap}
+                viewMode={viewMode}
+                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
+              />
+            ))}
+            {dedicatedNoCity.length > 0 && (
+              <DedicatedCityGroup
+                city="Sem cidade"
+                interfaces={dedicatedNoCity}
+                portMap={portMap}
+                viewMode={viewMode}
+                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Modal */}

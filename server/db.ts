@@ -581,6 +581,7 @@ export async function upsertInterfaceConfig(data: InsertInterfaceConfig) {
     set: {
       label: data.label,
       category: data.category,
+      city: data.city,
       contractedBps: data.contractedBps,
       alertThreshold: data.alertThreshold,
       alertEnabled: data.alertEnabled,

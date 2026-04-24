@@ -175,13 +175,27 @@
 
 ## Fase 16 — Configuração de Interfaces e Alertas de Saturação
 
-- [ ] Criar tabela interface_configs no schema Drizzle (portId, ifName, label, contractedBps, alertThreshold, alertEnabled, category)
-- [ ] Gerar e aplicar migração SQL
-- [ ] Criar helpers de banco em server/db.ts para interface_configs
-- [ ] Criar endpoints tRPC: getInterfaceConfigs, upsertInterfaceConfig, deleteInterfaceConfig
-- [ ] Implementar lógica de alerta: verificar utilização vs plano contratado e disparar Telegram
-- [ ] Pré-popular tabela com aliases do Ne8000
-- [ ] Criar página InterfaceConfig.tsx com tabela editável (nome, plano, threshold, ativo)
-- [ ] Atualizar TrafficAnalysis para usar nomes da tabela em vez de hardcoded
-- [ ] Adicionar item "Config. Interfaces" no menu lateral
-- [ ] Build e deploy em produção
+- [x] Criar tabela interface_configs no schema Drizzle (portId, ifName, label, contractedBps, alertThreshold, alertEnabled, category)
+- [x] Gerar e aplicar migração SQL
+- [x] Criar helpers de banco em server/db.ts para interface_configs
+- [x] Criar endpoints tRPC: getInterfaceConfigs, upsertInterfaceConfig, deleteInterfaceConfig
+- [x] Implementar lógica de alerta: verificar utilização vs plano contratado e disparar Telegram
+- [x] Pré-popular tabela com aliases do Ne8000
+- [x] Criar página InterfaceConfig.tsx com tabela editável (nome, plano, threshold, ativo)
+- [x] Atualizar TrafficAnalysis para usar nomes da tabela em vez de hardcoded
+- [x] Adicionar item "Config. Interfaces" no menu lateral
+- [x] Build e deploy em produção
+
+## Fase 17 — Config. Interfaces: Campo Cidade e Agrupamento
+
+- [x] Adicionar coluna `city` (VARCHAR 100, nullable) na tabela interface_configs
+- [x] Remover interfaces: PTP-TOPNET, PPPOE-CAETES, ONLINE-NET, Vlanif911
+- [x] Popular campo city com as cidades corretas para cada cliente
+- [x] Atualizar schema Drizzle com campo city
+- [x] Atualizar endpoints tRPC (upsertInterfaceConfig) para incluir city
+- [x] Atualizar InterfaceConfig.tsx com campo cidade no formulário de edição
+- [x] Atualizar InterfaceConfig.tsx para agrupar clientes dedicados por cidade
+- [x] Atualizar TrafficAnalysis.tsx para agrupar por cidade no modo normal e compacto
+- [x] Build e deploy em produção
+
+- [x] Atualizar TrafficAnalysis.tsx para agrupar interfaces dedicadas por cidade nos modos normal e compacto
