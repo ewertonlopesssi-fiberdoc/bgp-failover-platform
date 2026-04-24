@@ -681,6 +681,95 @@ export const appRouter = router({
       return (data.ports || []).filter((p: any) => MONITORED_PORT_IDS.includes(Number(p.port_id)));
     }),
 
+    // Retorna configurações de interfaces do banco
+    getInterfaceConfigs: localAuthProcedure.query(async () => {
+      return db.getAllInterfaceConfigs();
+    }),
+
+    // Salva/atualiza configuração de uma interface
+    upsertInterfaceConfig: adminProcedure
+      .input(z.object({
+        portId: z.number(),
+        ifName: z.string(),
+        label: z.string().min(1).max(150),
+        category: z.enum(["upstream", "dedicated"]),
+        contractedBps: z.number().min(0).default(0),
+        alertThreshold: z.number().min(1).max(100).default(80),
+        alertEnabled: z.boolean().default(false),
+      }))
+      .mutation(async ({ input }) => {
+        await db.upsertInterfaceConfig(input);
+        return { ok: true };
+      }),
+
+    // Verifica saturação de todas as interfaces e envia alertas Telegram
+    checkSaturation: localAuthProcedure.mutation(async () => {
+      const LIBRENMS_URL = process.env.LIBRENMS_URL || "http://45.237.165.251:8080";
+      const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN || "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+
+      const [configs, telegramCfg] = await Promise.all([
+        db.getAllInterfaceConfigs(),
+        db.getTelegramConfig(),
+      ]);
+
+      const alertConfigs = configs.filter(c => c.alertEnabled);
+      if (!alertConfigs.length) return { checked: 0, alerts: 0 };
+
+      const res = await fetch(
+        `${LIBRENMS_URL}/api/v0/ports?device_id=1&columns=port_id,ifName,ifSpeed,ifInOctets_rate,ifOutOctets_rate,ifOperStatus`,
+        { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+      );
+      if (!res.ok) return { checked: 0, alerts: 0 };
+      const data = await res.json() as { ports: any[] };
+      const portMap = new Map((data.ports || []).map((p: any) => [Number(p.port_id), p]));
+
+      let alertsSent = 0;
+      const now = Date.now();
+      const ALERT_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutos entre alertas repetidos
+
+      for (const cfg of alertConfigs) {
+        const port = portMap.get(cfg.portId);
+        if (!port || port.ifOperStatus !== "up") continue;
+
+        const inBps = (port.ifInOctets_rate || 0) * 8;
+        const outBps = (port.ifOutOctets_rate || 0) * 8;
+        const maxBps = Math.max(inBps, outBps);
+
+        // Referência: plano contratado (se definido) ou velocidade do link
+        const referenceBps = cfg.contractedBps > 0 ? cfg.contractedBps : (port.ifSpeed || 0);
+        if (referenceBps <= 0) continue;
+
+        const utilizationPct = (maxBps / referenceBps) * 100;
+        if (utilizationPct < cfg.alertThreshold) continue;
+
+        // Verificar cooldown
+        const lastAlert = cfg.lastAlertAt ? new Date(cfg.lastAlertAt).getTime() : 0;
+        if (now - lastAlert < ALERT_COOLDOWN_MS) continue;
+
+        // Enviar alerta Telegram
+        if (telegramCfg?.enabled && telegramCfg.botToken && telegramCfg.chatId) {
+          const refLabel = cfg.contractedBps > 0 ? `plano ${formatBpsAlert(cfg.contractedBps)}` : `link ${formatBpsAlert(referenceBps)}`;
+          const msg = `🔴 *ALERTA DE SATURAÇÃO*\n\n` +
+            `Interface: *${cfg.label}* (${cfg.ifName})\n` +
+            `Utilização: *${utilizationPct.toFixed(1)}%* do ${refLabel}\n` +
+            `IN: ${formatBpsAlert(inBps)} | OUT: ${formatBpsAlert(outBps)}\n` +
+            `Threshold: ${cfg.alertThreshold}%\n` +
+            `Horário: ${new Date().toLocaleString("pt-BR")}`;
+          try {
+            await fetch(`https://api.telegram.org/bot${telegramCfg.botToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chat_id: telegramCfg.chatId, text: msg, parse_mode: "Markdown" }),
+            });
+            await db.updateInterfaceAlertTime(cfg.portId);
+            alertsSent++;
+          } catch { /* ignore */ }
+        }
+      }
+
+      return { checked: alertConfigs.length, alerts: alertsSent };
+    }),
+
     // Retorna dados históricos de uma porta específica via RRD
     getHistory: localAuthProcedure
       .input(z.object({
@@ -739,3 +828,12 @@ export const appRouter = router({
   }),
 });
 export type AppRouter = typeof appRouter;
+
+// Helper para formatar bps em alertas Telegram
+function formatBpsAlert(bps: number): string {
+  if (!bps || bps <= 0) return "0 bps";
+  if (bps >= 1e9) return `${(bps / 1e9).toFixed(2)} Gbps`;
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(1)} Mbps`;
+  if (bps >= 1e3) return `${(bps / 1e3).toFixed(0)} Kbps`;
+  return `${bps.toFixed(0)} bps`;
+}

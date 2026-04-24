@@ -398,6 +398,10 @@ export default function TrafficAnalysis() {
     refetchInterval: 60000,
   });
 
+  // Carregar configurações do banco para usar labels e planos contratados
+  const { data: ifConfigs } = trpc.traffic.getInterfaceConfigs.useQuery();
+  const ifConfigMap = new Map((ifConfigs || []).map((c) => [c.portId, c]));
+
   const handleRefresh = useCallback(() => {
     refetch();
     setLastUpdate(new Date());
@@ -424,11 +428,21 @@ export default function TrafficAnalysis() {
     (ports || []).map((p: Port) => [Number(p.port_id), p])
   );
 
-  const upstreamInTotal = UPSTREAM_INTERFACES.reduce((acc, cfg) => {
+  // Mesclar labels do banco com as configurações hardcoded
+  const upstreamInterfaces: InterfaceConfig[] = UPSTREAM_INTERFACES.map((cfg) => {
+    const dbCfg = ifConfigMap.get(cfg.portId);
+    return dbCfg ? { ...cfg, label: dbCfg.label } : cfg;
+  });
+  const dedicatedInterfaces: InterfaceConfig[] = DEDICATED_INTERFACES.map((cfg) => {
+    const dbCfg = ifConfigMap.get(cfg.portId);
+    return dbCfg ? { ...cfg, label: dbCfg.label } : cfg;
+  });
+
+  const upstreamInTotal = upstreamInterfaces.reduce((acc, cfg) => {
     const p = portMap.get(cfg.portId);
     return acc + (p ? (p.ifInOctets_rate || 0) * 8 : 0);
   }, 0);
-  const upstreamOutTotal = UPSTREAM_INTERFACES.reduce((acc, cfg) => {
+  const upstreamOutTotal = upstreamInterfaces.reduce((acc, cfg) => {
     const p = portMap.get(cfg.portId);
     return acc + (p ? (p.ifOutOctets_rate || 0) * 8 : 0);
   }, 0);
@@ -523,7 +537,7 @@ export default function TrafficAnalysis() {
           subtitle="Provedores e peerings de trânsito"
           badgeColor="bg-blue-500"
           badgeTextColor="text-blue-400 bg-blue-500/20"
-          interfaces={UPSTREAM_INTERFACES}
+          interfaces={upstreamInterfaces}
           portMap={portMap}
           viewMode={viewMode}
           onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
@@ -533,7 +547,7 @@ export default function TrafficAnalysis() {
           subtitle="Interfaces de clientes com acesso dedicado"
           badgeColor="bg-orange-500"
           badgeTextColor="text-orange-400 bg-orange-500/20"
-          interfaces={DEDICATED_INTERFACES}
+          interfaces={dedicatedInterfaces}
           portMap={portMap}
           viewMode={viewMode}
           onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}

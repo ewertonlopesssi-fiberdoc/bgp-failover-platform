@@ -223,6 +223,24 @@ export const auditLogs = mysqlTable("audit_logs", {
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 
+// Interface traffic configurations (LibreNMS port labels, contracted plans, alert thresholds)
+export const interfaceConfigs = mysqlTable("interface_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  portId: int("portId").notNull().unique(),
+  ifName: varchar("ifName", { length: 100 }).notNull(),
+  label: varchar("label", { length: 150 }).notNull(),
+  category: mysqlEnum("category", ["upstream", "dedicated"]).default("dedicated").notNull(),
+  contractedBps: float("contractedBps").default(0).notNull(),  // 0 = use link speed
+  alertThreshold: int("alertThreshold").default(80).notNull(), // % of contractedBps (or link speed)
+  alertEnabled: boolean("alertEnabled").default(false).notNull(),
+  lastAlertAt: timestamp("lastAlertAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type InterfaceConfig = typeof interfaceConfigs.$inferSelect;
+export type InsertInterfaceConfig = typeof interfaceConfigs.$inferInsert;
+
 // Client failover state
 export const clientFailoverState = mysqlTable("client_failover_state", {
   id: int("id").autoincrement().primaryKey(),

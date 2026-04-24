@@ -172,3 +172,16 @@
 - [x] Implementar card compacto estilo badge com nome, IN/OUT e status em linha
 - [x] Persistir preferência de visualização no localStorage
 - [x] Build e deploy em produção
+
+## Fase 16 — Configuração de Interfaces e Alertas de Saturação
+
+- [ ] Criar tabela interface_configs no schema Drizzle (portId, ifName, label, contractedBps, alertThreshold, alertEnabled, category)
+- [ ] Gerar e aplicar migração SQL
+- [ ] Criar helpers de banco em server/db.ts para interface_configs
+- [ ] Criar endpoints tRPC: getInterfaceConfigs, upsertInterfaceConfig, deleteInterfaceConfig
+- [ ] Implementar lógica de alerta: verificar utilização vs plano contratado e disparar Telegram
+- [ ] Pré-popular tabela com aliases do Ne8000
+- [ ] Criar página InterfaceConfig.tsx com tabela editável (nome, plano, threshold, ativo)
+- [ ] Atualizar TrafficAnalysis para usar nomes da tabela em vez de hardcoded
+- [ ] Adicionar item "Config. Interfaces" no menu lateral
+- [ ] Build e deploy em produção

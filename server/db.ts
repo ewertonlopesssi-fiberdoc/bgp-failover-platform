@@ -9,6 +9,7 @@ import {
   linuxProbes, linuxMetrics, LinuxProbe,
   linuxDestinations, linuxDestMetrics, LinuxDestination,
   linuxIncidents,
+  interfaceConfigs, InsertInterfaceConfig,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -564,4 +565,33 @@ export async function listLinuxIncidents(params: {
     .orderBy(desc(linuxIncidents.startedAt))
     .limit(params.limit ?? 100);
   return rows;
+}
+
+// ─── Interface Configs ────────────────────────────────────────────────────────
+export async function getAllInterfaceConfigs() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(interfaceConfigs).orderBy(interfaceConfigs.category, interfaceConfigs.ifName);
+}
+
+export async function upsertInterfaceConfig(data: InsertInterfaceConfig) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(interfaceConfigs).values(data).onDuplicateKeyUpdate({
+    set: {
+      label: data.label,
+      category: data.category,
+      contractedBps: data.contractedBps,
+      alertThreshold: data.alertThreshold,
+      alertEnabled: data.alertEnabled,
+    },
+  });
+}
+
+export async function updateInterfaceAlertTime(portId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(interfaceConfigs)
+    .set({ lastAlertAt: new Date() })
+    .where(eq(interfaceConfigs.portId, portId));
 }
