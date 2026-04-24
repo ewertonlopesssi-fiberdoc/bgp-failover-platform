@@ -216,3 +216,9 @@
 - [x] Inserir registro na tabela interface_configs (produção e dev) com label=CANHOTINHO, city=Canhotinho, category=dedicated
 - [x] Adicionar Vlanif999 ao DEDICATED_INTERFACES no TrafficAnalysis.tsx
 - [x] Build e deploy em produção
+
+## Fase 21 — Gráficos em Mbps/Gbps
+- [x] Corrigir eixo Y do gráfico histórico para exibir em Mbps/Gbps (não bps brutos)
+- [x] Corrigir tooltip do gráfico para exibir valores formatados em Mbps/Gbps
+- [x] Corrigir legenda do gráfico (IN/OUT labels dinâmicos por unidade)
+- [x] Build e deploy em produção

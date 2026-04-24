@@ -107,11 +107,19 @@ function PortDetailModal({
     { refetchInterval: 60000 }
   );
 
+  // Determinar a melhor unidade para o eixo Y com base no valor máximo do histórico
+  const allValues = (data?.history || []).flatMap((p: { ts: number; inBps: number; outBps: number }) => [p.inBps, p.outBps]);
+  const maxVal = allValues.length > 0 ? Math.max(...allValues) : 0;
+  const yUnit = maxVal >= 1e9 ? "Gbps" : maxVal >= 1e6 ? "Mbps" : maxVal >= 1e3 ? "Kbps" : "bps";
+  const yDivisor = yUnit === "Gbps" ? 1e9 : yUnit === "Mbps" ? 1e6 : yUnit === "Kbps" ? 1e3 : 1;
+
   const chartData = (data?.history || []).map((p: { ts: number; inBps: number; outBps: number }) => ({
     time: formatTime(p.ts, period),
-    "IN (bps)": Math.round(p.inBps),
-    "OUT (bps)": Math.round(p.outBps),
+    [`IN (${yUnit})`]: parseFloat((p.inBps / yDivisor).toFixed(3)),
+    [`OUT (${yUnit})`]: parseFloat((p.outBps / yDivisor).toFixed(3)),
   }));
+  const inKey = `IN (${yUnit})`;
+  const outKey = `OUT (${yUnit})`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -161,15 +169,19 @@ function PortDetailModal({
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="time" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                <YAxis tickFormatter={(v: number) => formatBps(v)} tick={{ fill: "#9ca3af", fontSize: 10 }} width={85} />
+                <YAxis
+                  tickFormatter={(v: number) => `${v} ${yUnit}`}
+                  tick={{ fill: "#9ca3af", fontSize: 10 }}
+                  width={90}
+                />
                 <Tooltip
                   contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: "8px" }}
                   labelStyle={{ color: "#f9fafb" }}
-                  formatter={(value: number, name: string) => [formatBps(value), name]}
+                  formatter={(value: number, name: string) => [`${value} ${yUnit}`, name]}
                 />
                 <Legend wrapperStyle={{ color: "#9ca3af" }} />
-                <Area type="monotone" dataKey="IN (bps)" stroke="#10b981" fill="url(#inGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey="OUT (bps)" stroke="#3b82f6" fill="url(#outGrad)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey={inKey} stroke="#10b981" fill="url(#inGrad)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey={outKey} stroke="#3b82f6" fill="url(#outGrad)" strokeWidth={2} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           )}
