@@ -582,6 +582,7 @@ export async function upsertInterfaceConfig(data: InsertInterfaceConfig) {
       label: data.label,
       category: data.category,
       city: data.city,
+      clientIp: data.clientIp,
       contractedBps: data.contractedBps,
       alertThreshold: data.alertThreshold,
       alertEnabled: data.alertEnabled,
@@ -596,4 +597,20 @@ export async function updateInterfaceAlertTime(portId: number) {
   await db.update(interfaceConfigs)
     .set({ lastAlertAt: new Date() })
     .where(eq(interfaceConfigs.portId, portId));
+}
+
+// ─── Client Latency (ping) ────────────────────────────────────────────────────
+// Armazena a última latência medida por portId em memória (sem tabela extra)
+const latencyCache = new Map<number, { latencyMs: number | null; checkedAt: Date; status: "ok" | "timeout" | "error" }>();
+
+export function saveLatency(portId: number, latencyMs: number | null, status: "ok" | "timeout" | "error") {
+  latencyCache.set(portId, { latencyMs, checkedAt: new Date(), status });
+}
+
+export function getLatencies(): Array<{ portId: number; latencyMs: number | null; checkedAt: Date; status: string }> {
+  return Array.from(latencyCache.entries()).map(([portId, v]) => ({ portId, ...v }));
+}
+
+export function getLatencyByPortId(portId: number) {
+  return latencyCache.get(portId) ?? null;
 }

@@ -64,6 +64,13 @@
       "when": 1777052461811,
       "tag": "0008_smart_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1777060346782,
+      "tag": "0009_fearless_millenium_guard",
+      "breakpoints": true
     }
   ]
 }

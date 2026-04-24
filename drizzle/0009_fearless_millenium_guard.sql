@@ -1,0 +1,1 @@
+ALTER TABLE `interface_configs` ADD `clientIp` varchar(45);

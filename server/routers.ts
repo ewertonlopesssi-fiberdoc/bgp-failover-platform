@@ -828,6 +828,43 @@ export const appRouter = router({
           history: historyPoints,
         };
       }),
+
+    // Executa ping para todos os clientes com clientIp configurado e salva latência
+    pingClients: localAuthProcedure.mutation(async () => {
+      const configs = await db.getAllInterfaceConfigs();
+      const targets = configs.filter((c) => c.clientIp);
+      const { execSync } = await import("child_process");
+      const results: { portId: number; ip: string; latencyMs: number | null; status: string }[] = [];
+
+      for (const cfg of targets) {
+        const ip = cfg.clientIp!;
+        try {
+          // ping -c 3 -W 1 -q: 3 pacotes, timeout 1s, quiet
+          const output = execSync(`ping -c 3 -W 1 -q ${ip} 2>/dev/null`, { encoding: "utf8", timeout: 6000 });
+          // Extrair rtt avg: "rtt min/avg/max/mdev = 1.059/1.072/1.085/0.013 ms"
+          const match = output.match(/rtt min\/avg\/max\/mdev = [\d.]+\/([\d.]+)\//);
+          if (match) {
+            const latencyMs = parseFloat(match[1]);
+            db.saveLatency(cfg.portId, latencyMs, "ok");
+            results.push({ portId: cfg.portId, ip, latencyMs, status: "ok" });
+          } else {
+            // 100% packet loss
+            db.saveLatency(cfg.portId, null, "timeout");
+            results.push({ portId: cfg.portId, ip, latencyMs: null, status: "timeout" });
+          }
+        } catch {
+          db.saveLatency(cfg.portId, null, "error");
+          results.push({ portId: cfg.portId, ip, latencyMs: null, status: "error" });
+        }
+      }
+
+      return { pinged: targets.length, results };
+    }),
+
+    // Retorna latências atuais de todos os clientes
+    getLatencies: localAuthProcedure.query(async () => {
+      return db.getLatencies();
+    }),
   }),
 });
 export type AppRouter = typeof appRouter;

@@ -280,7 +280,32 @@ function PortDetailModal({
 }
 
 // ─── Card NORMAL ──────────────────────────────────────────────────────────────
-function PortCardNormal({ config, port, onClick }: { config: InterfaceConfig; port?: Port; onClick: () => void }) {
+type LatencyInfo = { latencyMs: number | null; status: string } | null;
+
+function LatencyBadge({ latency }: { latency: LatencyInfo }) {
+  if (!latency) return null;
+  if (latency.status === "timeout" || latency.status === "error" || latency.latencyMs === null) {
+    return (
+      <span className="text-[10px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 rounded px-1.5 py-0.5 flex items-center gap-0.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+        sem resposta
+      </span>
+    );
+  }
+  const ms = latency.latencyMs!;
+  const color = ms < 5 ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" :
+                ms < 20 ? "text-yellow-400 bg-yellow-500/10 border-yellow-500/20" :
+                "text-red-400 bg-red-500/10 border-red-500/20";
+  const dot = ms < 5 ? "bg-emerald-500" : ms < 20 ? "bg-yellow-500" : "bg-red-500";
+  return (
+    <span className={`text-[10px] font-mono border rounded px-1.5 py-0.5 flex items-center gap-0.5 ${color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full inline-block ${dot}`} />
+      {ms.toFixed(1)}ms
+    </span>
+  );
+}
+
+function PortCardNormal({ config, port, latency, onClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void }) {
   const isUp = port?.ifOperStatus === "up";
   const inBps = port ? (port.ifInOctets_rate || 0) * 8 : 0;
   const outBps = port ? (port.ifOutOctets_rate || 0) * 8 : 0;
@@ -301,7 +326,8 @@ function PortCardNormal({ config, port, onClick }: { config: InterfaceConfig; po
             <p className="text-gray-500 text-xs truncate">{config.ifName}</p>
           </div>
         </div>
-        <div className="flex-shrink-0 ml-2">
+        <div className="flex-shrink-0 ml-2 flex items-center gap-1.5">
+          {latency && <LatencyBadge latency={latency} />}
           {!port ? (
             <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs px-1.5 py-0">—</Badge>
           ) : isUp ? (
@@ -359,7 +385,7 @@ function PortCardNormal({ config, port, onClick }: { config: InterfaceConfig; po
 }
 
 // ─── Card COMPACTO ────────────────────────────────────────────────────────────
-function PortCardCompact({ config, port, onClick }: { config: InterfaceConfig; port?: Port; onClick: () => void }) {
+function PortCardCompact({ config, port, latency, onClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void }) {
   const isUp = port?.ifOperStatus === "up";
   const inBps = port ? (port.ifInOctets_rate || 0) * 8 : 0;
   const outBps = port ? (port.ifOutOctets_rate || 0) * 8 : 0;
@@ -387,6 +413,13 @@ function PortCardCompact({ config, port, onClick }: { config: InterfaceConfig; p
         <p className="text-white text-xs font-semibold truncate leading-tight">{config.label}</p>
         <p className="text-gray-600 text-[10px] truncate">{config.ifName}</p>
       </div>
+
+      {/* Latência */}
+      {latency && (
+        <div className="flex-shrink-0">
+          <LatencyBadge latency={latency} />
+        </div>
+      )}
 
       {/* Valores IN/OUT compactos */}
       <div className="flex-shrink-0 flex items-center gap-2 text-[11px] font-mono">
@@ -425,11 +458,12 @@ function PortCardCompact({ config, port, onClick }: { config: InterfaceConfig; p
 
 // ─── Grupo de cidade (dedicados) ─────────────────────────────────────────────
 function DedicatedCityGroup({
-  city, interfaces, portMap, viewMode, onSelect,
+  city, interfaces, portMap, latencyMap, viewMode, onSelect,
 }: {
   city: string;
   interfaces: InterfaceConfig[];
   portMap: Map<number, Port>;
+  latencyMap: Map<number, LatencyInfo>;
   viewMode: ViewMode;
   onSelect: (cfg: InterfaceConfig) => void;
 }) {
@@ -466,6 +500,7 @@ function DedicatedCityGroup({
                 key={cfg.portId}
                 config={cfg}
                 port={portMap.get(cfg.portId)}
+                latency={latencyMap.get(cfg.portId)}
                 onClick={() => onSelect(cfg)}
               />
             ) : (
@@ -473,6 +508,7 @@ function DedicatedCityGroup({
                 key={cfg.portId}
                 config={cfg}
                 port={portMap.get(cfg.portId)}
+                latency={latencyMap.get(cfg.portId)}
                 onClick={() => onSelect(cfg)}
               />
             )
@@ -485,7 +521,7 @@ function DedicatedCityGroup({
 
 // ─── Seção de interfaces ──────────────────────────────────────────────────────
 function InterfaceSection({
-  title, subtitle, badgeColor, badgeTextColor, interfaces, portMap, viewMode, onSelect,
+  title, subtitle, badgeColor, badgeTextColor, interfaces, portMap, latencyMap, viewMode, onSelect,
 }: {
   title: string;
   subtitle: string;
@@ -493,6 +529,7 @@ function InterfaceSection({
   badgeTextColor: string;
   interfaces: InterfaceConfig[];
   portMap: Map<number, Port>;
+  latencyMap: Map<number, LatencyInfo>;
   viewMode: ViewMode;
   onSelect: (cfg: InterfaceConfig) => void;
 }) {
@@ -519,6 +556,7 @@ function InterfaceSection({
               key={cfg.portId}
               config={cfg}
               port={portMap.get(cfg.portId)}
+              latency={latencyMap.get(cfg.portId)}
               onClick={() => onSelect(cfg)}
             />
           ) : (
@@ -526,6 +564,7 @@ function InterfaceSection({
               key={cfg.portId}
               config={cfg}
               port={portMap.get(cfg.portId)}
+              latency={latencyMap.get(cfg.portId)}
               onClick={() => onSelect(cfg)}
             />
           )
@@ -556,6 +595,25 @@ export default function TrafficAnalysis() {
   // Carregar configurações do banco para usar labels e planos contratados
   const { data: ifConfigs } = trpc.traffic.getInterfaceConfigs.useQuery();
   const ifConfigMap = new Map((ifConfigs || []).map((c) => [c.portId, c]));
+
+  // Latências dos clientes (polling a cada 30s)
+  const { data: latencies, refetch: refetchLatencies } = trpc.traffic.getLatencies.useQuery(undefined, {
+    refetchInterval: 30000,
+  });
+  const latencyMap = new Map((latencies || []).map((l) => [l.portId, l]));
+
+  // Mutation para disparar ping
+  const pingMutation = trpc.traffic.pingClients.useMutation({
+    onSuccess: () => refetchLatencies(),
+  });
+
+  // Disparar ping ao montar e a cada 30s
+  useEffect(() => {
+    pingMutation.mutate();
+    const interval = setInterval(() => pingMutation.mutate(), 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -719,6 +777,7 @@ export default function TrafficAnalysis() {
           badgeTextColor="text-blue-400 bg-blue-500/20"
           interfaces={upstreamInterfaces}
           portMap={portMap}
+          latencyMap={latencyMap}
           viewMode={viewMode}
           onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
         />
@@ -742,6 +801,7 @@ export default function TrafficAnalysis() {
                 city={city}
                 interfaces={dedicatedByCityMap[city]}
                 portMap={portMap}
+                latencyMap={latencyMap}
                 viewMode={viewMode}
                 onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
               />
@@ -751,6 +811,7 @@ export default function TrafficAnalysis() {
                 city="Sem cidade"
                 interfaces={dedicatedNoCity}
                 portMap={portMap}
+                latencyMap={latencyMap}
                 viewMode={viewMode}
                 onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
               />

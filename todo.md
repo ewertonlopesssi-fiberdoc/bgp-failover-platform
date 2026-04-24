@@ -228,3 +228,11 @@
 - [x] Adicionar botão de período 30d no seletor de período (já existia)
 - [x] Calcular e exibir percentil 95 de IN e OUT no modal do gráfico
 - [x] Build e deploy em produção
+
+## Fase 23 — Latência dos clientes dedicados nos cards de tráfego
+- [x] Adicionar coluna client_ip na tabela interface_configs (schema + migration)
+- [x] Popular client_ip com IPs mapeados (portId→IP) em produção e dev
+- [x] Criar endpoint tRPC traffic.pingClients que faz ping para todos os client_ips e salva latência
+- [x] Criar endpoint tRPC traffic.getLatencies que retorna latência atual de cada portId
+- [x] Exibir latência (ms) à esquerda do tráfego nos cards normal e compacto
+- [x] Build e deploy em produção

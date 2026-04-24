@@ -231,6 +231,7 @@ export const interfaceConfigs = mysqlTable("interface_configs", {
   label: varchar("label", { length: 150 }).notNull(),
   category: mysqlEnum("category", ["upstream", "dedicated"]).default("dedicated").notNull(),
   city: varchar("city", { length: 100 }),
+  clientIp: varchar("clientIp", { length: 45 }),  // IP do cliente (.2 do /30)
   contractedBps: float("contractedBps").default(0).notNull(),  // 0 = use link speed
   alertThreshold: int("alertThreshold").default(80).notNull(), // % of contractedBps (or link speed)
   alertEnabled: boolean("alertEnabled").default(false).notNull(),
