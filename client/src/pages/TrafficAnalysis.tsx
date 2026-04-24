@@ -57,6 +57,7 @@ const DEDICATED_INTERFACES: InterfaceConfig[] = [
   { portId: 108, ifName: "Eth-Trunk3.2272",  label: "HNET-META",              color: "#86efac" },
   { portId: 112, ifName: "Eth-Trunk3.2273",  label: "HNET-META-BELO-JARDIM",  color: "#fde68a" },
   { portId: 118, ifName: "Eth-Trunk3.2276",  label: "VIPNET-ARCOVERDE",       color: "#a5b4fc" },
+  { portId: 84,  ifName: "Vlanif999",         label: "CANHOTINHO",             color: "#f97316" },
 ];
 
 // ─── Utilitários ──────────────────────────────────────────────────────────────

@@ -210,3 +210,9 @@
 - [x] Adicionar toggle "Visível" na página InterfaceConfig.tsx
 - [x] Filtrar interfaces com visible=false na página TrafficAnalysis.tsx
 - [x] Build e deploy em produção
+
+## Fase 20 — Adicionar cliente Canhotinho (Vlanif999)
+- [x] Descobrir portId da Vlanif999 no LibreNMS (portId=84)
+- [x] Inserir registro na tabela interface_configs (produção e dev) com label=CANHOTINHO, city=Canhotinho, category=dedicated
+- [x] Adicionar Vlanif999 ao DEDICATED_INTERFACES no TrafficAnalysis.tsx
+- [x] Build e deploy em produção
