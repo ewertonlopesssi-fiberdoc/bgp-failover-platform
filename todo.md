@@ -236,3 +236,12 @@
 - [x] Criar endpoint tRPC traffic.getLatencies que retorna latência atual de cada portId
 - [x] Exibir latência (ms) à esquerda do tráfego nos cards normal e compacto
 - [x] Build e deploy em produção
+
+## Fase 24 — Cron de ping, alerta Telegram por latência e histórico RTT
+- [x] Criar tabela latency_history no banco (portId, latencyMs, status, timestamp)
+- [x] Atualizar pingClients para persistir cada medição no banco
+- [x] Criar endpoint traffic.getLatencyHistory para retornar histórico RTT por portId e período
+- [x] Implementar alerta Telegram quando latência > threshold ou sem resposta por 3 ciclos
+- [x] Adicionar modal de histórico RTT ao clicar no badge de latência nos cards
+- [x] Instalar cron de ping automático no servidor (a cada 1 min)
+- [x] Build e deploy em produção

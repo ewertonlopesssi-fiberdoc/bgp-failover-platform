@@ -244,6 +244,17 @@ export const interfaceConfigs = mysqlTable("interface_configs", {
 export type InterfaceConfig = typeof interfaceConfigs.$inferSelect;
 export type InsertInterfaceConfig = typeof interfaceConfigs.$inferInsert;
 
+// Latency history — ping RTT per client interface over time
+export const latencyHistory = mysqlTable("latency_history", {
+  id: int("id").autoincrement().primaryKey(),
+  portId: int("portId").notNull(),
+  latencyMs: float("latencyMs"),  // null = timeout/unreachable
+  status: varchar("status", { length: 20 }).default("ok").notNull(), // ok | timeout | error
+  measuredAt: timestamp("measuredAt").defaultNow().notNull(),
+});
+
+export type LatencyHistory = typeof latencyHistory.$inferSelect;
+
 // Client failover state
 export const clientFailoverState = mysqlTable("client_failover_state", {
   id: int("id").autoincrement().primaryKey(),

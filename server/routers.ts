@@ -13,6 +13,9 @@ import { addLoopbackIp, removeLoopbackIp, listLoopbackIps } from "./linuxMonitor
 const JWT_SECRET = process.env.JWT_SECRET || "bgp-failover-secret-key";
 const LOCAL_AUTH_COOKIE = "bgp_local_auth";
 
+// Cache de cooldown de alertas de latência por portId (em memória)
+const latencyAlertCooldown = new Map<number, number>();
+
 function hashPassword(password: string): string {
   return createHash("sha256").update(password + "bgp-salt-2024").digest("hex");
 }
@@ -831,40 +834,101 @@ export const appRouter = router({
 
     // Executa ping para todos os clientes com clientIp configurado e salva latência
     pingClients: localAuthProcedure.mutation(async () => {
-      const configs = await db.getAllInterfaceConfigs();
+      const [configs, telegramCfg] = await Promise.all([
+        db.getAllInterfaceConfigs(),
+        db.getTelegramConfig(),
+      ]);
       const targets = configs.filter((c) => c.clientIp);
       const { execSync } = await import("child_process");
       const results: { portId: number; ip: string; latencyMs: number | null; status: string }[] = [];
 
+      // Threshold de latência alta: usa latencyThreshold do telegram_config (padrão 50ms)
+      const LATENCY_THRESHOLD_MS = telegramCfg?.latencyThreshold ?? 50;
+      const ALERT_COOLDOWN_MS = 15 * 60 * 1000; // 15 min entre alertas repetidos por cliente
+      // Cache de último alerta de latência por portId (em memória, suficiente para cooldown)
+      const now = Date.now();
+
       for (const cfg of targets) {
         const ip = cfg.clientIp!;
+        let latencyMs: number | null = null;
+        let status: "ok" | "timeout" | "error" = "ok";
+
         try {
-          // ping -c 3 -W 1 -q: 3 pacotes, timeout 1s, quiet
           const output = execSync(`ping -c 3 -W 1 -q ${ip} 2>/dev/null`, { encoding: "utf8", timeout: 6000 });
-          // Extrair rtt avg: "rtt min/avg/max/mdev = 1.059/1.072/1.085/0.013 ms"
           const match = output.match(/rtt min\/avg\/max\/mdev = [\d.]+\/([\d.]+)\//);
           if (match) {
-            const latencyMs = parseFloat(match[1]);
-            db.saveLatency(cfg.portId, latencyMs, "ok");
-            results.push({ portId: cfg.portId, ip, latencyMs, status: "ok" });
+            latencyMs = parseFloat(match[1]);
+            status = "ok";
           } else {
-            // 100% packet loss
-            db.saveLatency(cfg.portId, null, "timeout");
-            results.push({ portId: cfg.portId, ip, latencyMs: null, status: "timeout" });
+            status = "timeout";
           }
         } catch {
-          db.saveLatency(cfg.portId, null, "error");
-          results.push({ portId: cfg.portId, ip, latencyMs: null, status: "error" });
+          status = "error";
+        }
+
+        await db.saveLatency(cfg.portId, latencyMs, status);
+        results.push({ portId: cfg.portId, ip, latencyMs, status });
+
+        // Alerta Telegram: latência alta ou sem resposta
+        if (telegramCfg?.enabled && telegramCfg.botToken && telegramCfg.chatId) {
+          const lastAlert = latencyAlertCooldown.get(cfg.portId) ?? 0;
+          if (now - lastAlert >= ALERT_COOLDOWN_MS) {
+            let alertMsg: string | null = null;
+            if (status === "timeout" || status === "error") {
+              alertMsg = `⚠️ *CLIENTE SEM RESPOSTA*\n\n` +
+                `Cliente: *${cfg.label}*${cfg.city ? ` (${cfg.city})` : ""}\n` +
+                `IP: \`${ip}\`\n` +
+                `Status: sem resposta ao ping\n` +
+                `Horário: ${new Date().toLocaleString("pt-BR")}`;
+            } else if (latencyMs !== null && latencyMs > LATENCY_THRESHOLD_MS) {
+              alertMsg = `🟡 *LATÊNCIA ALTA*\n\n` +
+                `Cliente: *${cfg.label}*${cfg.city ? ` (${cfg.city})` : ""}\n` +
+                `IP: \`${ip}\`\n` +
+                `Latência: *${latencyMs.toFixed(1)} ms* (threshold: ${LATENCY_THRESHOLD_MS} ms)\n` +
+                `Horário: ${new Date().toLocaleString("pt-BR")}`;
+            }
+            if (alertMsg) {
+              try {
+                await fetch(`https://api.telegram.org/bot${telegramCfg.botToken}/sendMessage`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ chat_id: telegramCfg.chatId, text: alertMsg, parse_mode: "Markdown" }),
+                });
+                latencyAlertCooldown.set(cfg.portId, now);
+              } catch { /* ignore */ }
+            }
+          }
         }
       }
 
       return { pinged: targets.length, results };
     }),
 
-    // Retorna latências atuais de todos os clientes
+    // Retorna latências atuais de todos os clientes (cache em memória)
     getLatencies: localAuthProcedure.query(async () => {
       return db.getLatencies();
     }),
+
+    // Retorna histórico RTT de uma interface por período
+    getLatencyHistory: localAuthProcedure
+      .input(z.object({
+        portId: z.number(),
+        period: z.enum(["1h", "6h", "24h", "7d"]).default("1h"),
+      }))
+      .query(async ({ input }) => {
+        const periodMs: Record<string, number> = {
+          "1h": 60 * 60 * 1000,
+          "6h": 6 * 60 * 60 * 1000,
+          "24h": 24 * 60 * 60 * 1000,
+          "7d": 7 * 24 * 60 * 60 * 1000,
+        };
+        const rows = await db.getLatencyHistory(input.portId, periodMs[input.period]);
+        return rows.map((r) => ({
+          latencyMs: r.latencyMs,
+          status: r.status,
+          time: r.measuredAt.getTime(),
+        }));
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

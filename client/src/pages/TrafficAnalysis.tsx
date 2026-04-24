@@ -279,14 +279,135 @@ function PortDetailModal({
   );
 }
 
+// ─── Modal de histórico RTT ──────────────────────────────────────────────────
+function LatencyHistoryModal({ portId, label, color, onClose }: { portId: number; label: string; color: string; onClose: () => void }) {
+  const [lPeriod, setLPeriod] = useState<"1h" | "6h" | "24h" | "7d">("1h");
+  const { data, isLoading } = trpc.traffic.getLatencyHistory.useQuery(
+    { portId, period: lPeriod },
+    { refetchInterval: 60000 }
+  );
+
+  const chartData = (data || []).map((r) => ({
+    time: new Date(r.time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+    latencyMs: r.latencyMs ?? null,
+    status: r.status,
+  }));
+
+  const validMs = (data || []).filter((r) => r.latencyMs !== null).map((r) => r.latencyMs as number);
+  const avgMs = validMs.length ? validMs.reduce((a, b) => a + b, 0) / validMs.length : null;
+  const maxMs = validMs.length ? Math.max(...validMs) : null;
+  const minMs = validMs.length ? Math.min(...validMs) : null;
+  const timeouts = (data || []).filter((r) => r.status !== "ok").length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-3xl shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+            <div>
+              <h3 className="text-white font-semibold text-lg">{label}</h3>
+              <p className="text-gray-400 text-sm">Histórico de latência (RTT)</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex bg-gray-800 rounded-lg p-0.5 gap-0.5">
+              {(["1h", "6h", "24h", "7d"] as const).map((p) => (
+                <button key={p} onClick={() => setLPeriod(p)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium transition-all ${
+                    lPeriod === p ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                  }`}>{p}</button>
+              ))}
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-400 hover:text-white">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {isLoading ? (
+            <div className="h-56 flex items-center justify-center text-gray-500">
+              <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Carregando...
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="h-56 flex flex-col items-center justify-center text-gray-500 gap-2">
+              <Clock className="w-8 h-8" />
+              <p className="text-sm">Sem dados de latência para este período.</p>
+              <p className="text-xs text-gray-600">O cron de ping coleta a cada 1 minuto.</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="rttGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="time" tick={{ fill: "#9ca3af", fontSize: 10 }} interval="preserveStartEnd" />
+                <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} tickFormatter={(v) => v === null ? "" : `${v}ms`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#111827", border: "1px solid #374151", borderRadius: 8 }}
+                  labelStyle={{ color: "#e5e7eb" }}
+                  formatter={(value: unknown) => [
+                    value === null || value === undefined ? "sem resposta" : `${(value as number).toFixed(2)} ms`,
+                    "RTT",
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="latencyMs"
+                  name="RTT"
+                  stroke={color}
+                  strokeWidth={2}
+                  fill="url(#rttGrad)"
+                  dot={false}
+                  connectNulls={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+
+          {/* Estatísticas */}
+          {validMs.length > 0 && (
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+                <p className="text-gray-500 text-xs mb-0.5">Mínimo</p>
+                <p className="text-emerald-400 font-mono text-sm font-semibold">{minMs!.toFixed(2)} ms</p>
+              </div>
+              <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+                <p className="text-gray-500 text-xs mb-0.5">Média</p>
+                <p className="text-blue-400 font-mono text-sm font-semibold">{avgMs!.toFixed(2)} ms</p>
+              </div>
+              <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+                <p className="text-gray-500 text-xs mb-0.5">Máximo</p>
+                <p className="text-yellow-400 font-mono text-sm font-semibold">{maxMs!.toFixed(2)} ms</p>
+              </div>
+              <div className="bg-gray-800/60 rounded-lg p-2 text-center">
+                <p className="text-gray-500 text-xs mb-0.5">Timeouts</p>
+                <p className={`font-mono text-sm font-semibold ${timeouts > 0 ? "text-red-400" : "text-gray-400"}`}>{timeouts}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Card NORMAL ──────────────────────────────────────────────────────────────
 type LatencyInfo = { latencyMs: number | null; status: string } | null;
 
-function LatencyBadge({ latency }: { latency: LatencyInfo }) {
+function LatencyBadge({ latency, onClick }: { latency: LatencyInfo; onClick?: (e: React.MouseEvent) => void }) {
   if (!latency) return null;
   if (latency.status === "timeout" || latency.status === "error" || latency.latencyMs === null) {
     return (
-      <span className="text-[10px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 rounded px-1.5 py-0.5 flex items-center gap-0.5">
+      <span
+        onClick={onClick ? (e) => { e.stopPropagation(); onClick(e); } : undefined}
+        className={`text-[10px] font-mono text-red-400 bg-red-500/10 border border-red-500/20 rounded px-1.5 py-0.5 flex items-center gap-0.5 ${onClick ? "cursor-pointer hover:bg-red-500/20 transition-colors" : ""}`}
+      >
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
         sem resposta
       </span>
@@ -298,14 +419,17 @@ function LatencyBadge({ latency }: { latency: LatencyInfo }) {
                 "text-red-400 bg-red-500/10 border-red-500/20";
   const dot = ms < 5 ? "bg-emerald-500" : ms < 20 ? "bg-yellow-500" : "bg-red-500";
   return (
-    <span className={`text-[10px] font-mono border rounded px-1.5 py-0.5 flex items-center gap-0.5 ${color}`}>
+    <span
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(e); } : undefined}
+      className={`text-[10px] font-mono border rounded px-1.5 py-0.5 flex items-center gap-0.5 ${color} ${onClick ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+    >
       <span className={`w-1.5 h-1.5 rounded-full inline-block ${dot}`} />
       {ms.toFixed(1)}ms
     </span>
   );
 }
 
-function PortCardNormal({ config, port, latency, onClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void }) {
+function PortCardNormal({ config, port, latency, onClick, onLatencyClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void; onLatencyClick?: () => void }) {
   const isUp = port?.ifOperStatus === "up";
   const inBps = port ? (port.ifInOctets_rate || 0) * 8 : 0;
   const outBps = port ? (port.ifOutOctets_rate || 0) * 8 : 0;
@@ -327,7 +451,7 @@ function PortCardNormal({ config, port, latency, onClick }: { config: InterfaceC
           </div>
         </div>
         <div className="flex-shrink-0 ml-2 flex items-center gap-1.5">
-          {latency && <LatencyBadge latency={latency} />}
+          {latency && <LatencyBadge latency={latency} onClick={onLatencyClick} />}
           {!port ? (
             <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-xs px-1.5 py-0">—</Badge>
           ) : isUp ? (
@@ -385,7 +509,7 @@ function PortCardNormal({ config, port, latency, onClick }: { config: InterfaceC
 }
 
 // ─── Card COMPACTO ────────────────────────────────────────────────────────────
-function PortCardCompact({ config, port, latency, onClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void }) {
+function PortCardCompact({ config, port, latency, onClick, onLatencyClick }: { config: InterfaceConfig; port?: Port; latency?: LatencyInfo; onClick: () => void; onLatencyClick?: () => void }) {
   const isUp = port?.ifOperStatus === "up";
   const inBps = port ? (port.ifInOctets_rate || 0) * 8 : 0;
   const outBps = port ? (port.ifOutOctets_rate || 0) * 8 : 0;
@@ -417,7 +541,7 @@ function PortCardCompact({ config, port, latency, onClick }: { config: Interface
       {/* Latência */}
       {latency && (
         <div className="flex-shrink-0">
-          <LatencyBadge latency={latency} />
+          <LatencyBadge latency={latency} onClick={onLatencyClick} />
         </div>
       )}
 
@@ -458,7 +582,7 @@ function PortCardCompact({ config, port, latency, onClick }: { config: Interface
 
 // ─── Grupo de cidade (dedicados) ─────────────────────────────────────────────
 function DedicatedCityGroup({
-  city, interfaces, portMap, latencyMap, viewMode, onSelect,
+  city, interfaces, portMap, latencyMap, viewMode, onSelect, onLatencySelect,
 }: {
   city: string;
   interfaces: InterfaceConfig[];
@@ -466,6 +590,7 @@ function DedicatedCityGroup({
   latencyMap: Map<number, LatencyInfo>;
   viewMode: ViewMode;
   onSelect: (cfg: InterfaceConfig) => void;
+  onLatencySelect?: (cfg: InterfaceConfig) => void;
 }) {
   const [open, setOpen] = useState(true);
   const totalIn = interfaces.reduce((s, cfg) => {
@@ -502,6 +627,7 @@ function DedicatedCityGroup({
                 port={portMap.get(cfg.portId)}
                 latency={latencyMap.get(cfg.portId)}
                 onClick={() => onSelect(cfg)}
+                onLatencyClick={onLatencySelect ? () => onLatencySelect(cfg) : undefined}
               />
             ) : (
               <PortCardNormal
@@ -510,6 +636,7 @@ function DedicatedCityGroup({
                 port={portMap.get(cfg.portId)}
                 latency={latencyMap.get(cfg.portId)}
                 onClick={() => onSelect(cfg)}
+                onLatencyClick={onLatencySelect ? () => onLatencySelect(cfg) : undefined}
               />
             )
           )}
@@ -521,7 +648,7 @@ function DedicatedCityGroup({
 
 // ─── Seção de interfaces ──────────────────────────────────────────────────────
 function InterfaceSection({
-  title, subtitle, badgeColor, badgeTextColor, interfaces, portMap, latencyMap, viewMode, onSelect,
+  title, subtitle, badgeColor, badgeTextColor, interfaces, portMap, latencyMap, viewMode, onSelect, onLatencySelect,
 }: {
   title: string;
   subtitle: string;
@@ -532,6 +659,7 @@ function InterfaceSection({
   latencyMap: Map<number, LatencyInfo>;
   viewMode: ViewMode;
   onSelect: (cfg: InterfaceConfig) => void;
+  onLatencySelect?: (cfg: InterfaceConfig) => void;
 }) {
   return (
     <div className="flex flex-col overflow-hidden border-r border-gray-800 last:border-r-0">
@@ -558,6 +686,7 @@ function InterfaceSection({
               port={portMap.get(cfg.portId)}
               latency={latencyMap.get(cfg.portId)}
               onClick={() => onSelect(cfg)}
+              onLatencyClick={onLatencySelect ? () => onLatencySelect(cfg) : undefined}
             />
           ) : (
             <PortCardNormal
@@ -566,6 +695,7 @@ function InterfaceSection({
               port={portMap.get(cfg.portId)}
               latency={latencyMap.get(cfg.portId)}
               onClick={() => onSelect(cfg)}
+              onLatencyClick={onLatencySelect ? () => onLatencySelect(cfg) : undefined}
             />
           )
         )}
@@ -585,6 +715,7 @@ export default function TrafficAnalysis() {
     }
   });
   const [selectedPort, setSelectedPort] = useState<{ portId: number; label: string; color: string; contractedBps?: number } | null>(null);
+  const [selectedLatencyPort, setSelectedLatencyPort] = useState<{ portId: number; label: string; color: string } | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -780,6 +911,7 @@ export default function TrafficAnalysis() {
           latencyMap={latencyMap}
           viewMode={viewMode}
           onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
+          onLatencySelect={(cfg) => setSelectedLatencyPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
         />
         {/* Coluna dedicados — agrupada por cidade */}
         <div className="flex flex-col overflow-hidden">
@@ -804,6 +936,7 @@ export default function TrafficAnalysis() {
                 latencyMap={latencyMap}
                 viewMode={viewMode}
                 onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
+                onLatencySelect={(cfg) => setSelectedLatencyPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
               />
             ))}
             {dedicatedNoCity.length > 0 && (
@@ -814,13 +947,24 @@ export default function TrafficAnalysis() {
                 latencyMap={latencyMap}
                 viewMode={viewMode}
                 onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
+                onLatencySelect={(cfg) => setSelectedLatencyPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
               />
             )}
           </div>
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal de histórico RTT */}
+      {selectedLatencyPort && (
+        <LatencyHistoryModal
+          portId={selectedLatencyPort.portId}
+          label={selectedLatencyPort.label}
+          color={selectedLatencyPort.color}
+          onClose={() => setSelectedLatencyPort(null)}
+        />
+      )}
+
+      {/* Modal de gráfico de tráfego */}
       {selectedPort && (
         <PortDetailModal
           portId={selectedPort.portId}

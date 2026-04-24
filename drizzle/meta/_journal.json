@@ -71,6 +71,13 @@
       "when": 1777060346782,
       "tag": "0009_fearless_millenium_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1777061427207,
+      "tag": "0010_magenta_william_stryker",
+      "breakpoints": true
     }
   ]
 }

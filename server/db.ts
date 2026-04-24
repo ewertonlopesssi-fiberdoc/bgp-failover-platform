@@ -10,6 +10,7 @@ import {
   linuxDestinations, linuxDestMetrics, LinuxDestination,
   linuxIncidents,
   interfaceConfigs, InsertInterfaceConfig,
+  latencyHistory,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -599,12 +600,25 @@ export async function updateInterfaceAlertTime(portId: number) {
     .where(eq(interfaceConfigs.portId, portId));
 }
 
-// ─── Client Latency (ping) ────────────────────────────────────────────────────
-// Armazena a última latência medida por portId em memória (sem tabela extra)
+// ─── Client Latency (ping) ─────────────────────────────────────────────────────────────────────────────────────
+// Cache em memória para última leitura rápida
 const latencyCache = new Map<number, { latencyMs: number | null; checkedAt: Date; status: "ok" | "timeout" | "error" }>();
 
-export function saveLatency(portId: number, latencyMs: number | null, status: "ok" | "timeout" | "error") {
+export async function saveLatency(portId: number, latencyMs: number | null, status: "ok" | "timeout" | "error") {
+  // Atualiza cache em memória
   latencyCache.set(portId, { latencyMs, checkedAt: new Date(), status });
+  // Persiste no banco
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(latencyHistory).values({ portId, latencyMs, status, measuredAt: new Date() });
+  // Limpeza assíncrona: remove registros mais antigos que 7 dias para este portId
+  // Usa SQL raw simples para evitar complexidade de expressões negadas
+  getDb().then((d) => {
+    if (!d) return;
+    d.execute(
+      `DELETE FROM latency_history WHERE portId = ${portId} AND measuredAt < DATE_SUB(NOW(), INTERVAL 7 DAY)`
+    ).catch(() => {});
+  });
 }
 
 export function getLatencies(): Array<{ portId: number; latencyMs: number | null; checkedAt: Date; status: string }> {
@@ -613,4 +627,18 @@ export function getLatencies(): Array<{ portId: number; latencyMs: number | null
 
 export function getLatencyByPortId(portId: number) {
   return latencyCache.get(portId) ?? null;
+}
+
+export async function getLatencyHistory(portId: number, sinceMs: number): Promise<Array<{ latencyMs: number | null; status: string; measuredAt: Date }>> {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - sinceMs);
+  return db.select({
+    latencyMs: latencyHistory.latencyMs,
+    status: latencyHistory.status,
+    measuredAt: latencyHistory.measuredAt,
+  })
+    .from(latencyHistory)
+    .where(and(eq(latencyHistory.portId, portId), gte(latencyHistory.measuredAt, since)))
+    .orderBy(latencyHistory.measuredAt);
 }
