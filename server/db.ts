@@ -539,10 +539,29 @@ export async function listLinuxIncidents(params: {
   const conditions: any[] = [];
   if (params.probeId) conditions.push(eq(linuxIncidents.probeId, params.probeId));
   if (params.destinationId) conditions.push(eq(linuxIncidents.destinationId, params.destinationId));
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: linuxIncidents.id,
+      destinationId: linuxIncidents.destinationId,
+      probeId: linuxIncidents.probeId,
+      type: linuxIncidents.type,
+      startedAt: linuxIncidents.startedAt,
+      endedAt: linuxIncidents.endedAt,
+      avgLatencyMs: linuxIncidents.avgLatencyMs,
+      avgLoss: linuxIncidents.avgLoss,
+      maxLatencyMs: linuxIncidents.maxLatencyMs,
+      maxLoss: linuxIncidents.maxLoss,
+      resolved: linuxIncidents.resolved,
+      createdAt: linuxIncidents.createdAt,
+      destinationName: linuxDestinations.name,
+      destinationHost: linuxDestinations.host,
+      probeName: linuxProbes.name,
+    })
     .from(linuxIncidents)
+    .leftJoin(linuxDestinations, eq(linuxIncidents.destinationId, linuxDestinations.id))
+    .leftJoin(linuxProbes, eq(linuxIncidents.probeId, linuxProbes.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(linuxIncidents.startedAt))
     .limit(params.limit ?? 100);
+  return rows;
 }

@@ -1284,8 +1284,13 @@ function IncidentsTab({ probes }: { probes: { id: number; name: string }[] }) {
                         {t.label}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-xs font-mono text-muted-foreground">#{inc.destinationId}</td>
-                    <td className="py-2 px-3 text-xs font-mono text-muted-foreground">#{inc.probeId}</td>
+                    <td className="py-2 px-3">
+                      <div className="text-xs font-medium">{inc.destinationName ?? `#${inc.destinationId}`}</div>
+                      {inc.destinationHost && (
+                        <div className="text-xs text-muted-foreground font-mono">{inc.destinationHost}</div>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground">{inc.probeName ?? `#${inc.probeId}`}</td>
                     <td className="py-2 px-3 text-xs">{new Date(inc.startedAt).toLocaleString("pt-BR")}</td>
                     <td className="py-2 px-3 text-xs">
                       {inc.endedAt
