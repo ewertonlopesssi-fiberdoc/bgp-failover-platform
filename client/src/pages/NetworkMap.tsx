@@ -474,7 +474,7 @@ export default function NetworkMap() {
       </div>
 
       {/* Map */}
-      <div className="relative" style={{ height: "calc(100vh - 130px)" }}>
+      <div className="relative" style={{ height: "calc(100vh - 130px)", minHeight: "400px" }}>
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
@@ -488,7 +488,7 @@ export default function NetworkMap() {
             </div>
           </div>
         )}
-        <div style={{ width: "100%", height: "100%" }}>
+        <div style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}>
           <MapView
             className="w-full h-full"
             initialCenter={center}

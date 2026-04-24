@@ -150,6 +150,6 @@ export function MapView({
   }, [init]);
 
   return (
-    <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />
+    <div ref={mapContainer} className={cn("w-full", className)} style={className?.includes('h-') ? undefined : { height: '500px' }} />
   );
 }
