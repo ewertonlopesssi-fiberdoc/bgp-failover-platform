@@ -663,5 +663,79 @@ export const appRouter = router({
         return db.listLinuxIncidents(input);
       }),
   }),
+
+  // ─── Traffic Analysis (LibreNMS proxy) ───────────────────────────────────────
+  traffic: router({
+    // Retorna dados em tempo real de todas as interfaces monitoradas
+    getPorts: localAuthProcedure.query(async () => {
+      const LIBRENMS_URL = process.env.LIBRENMS_URL || "http://45.237.165.251:8080";
+      const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN || "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+      const MONITORED_PORT_IDS = [4, 5, 6, 39, 130, 77, 126, 90, 106, 102, 103, 104, 105, 107, 108, 112, 118, 99, 122, 91, 100, 115, 88, 117, 83];
+
+      const res = await fetch(
+        `${LIBRENMS_URL}/api/v0/ports?device_id=1&columns=port_id,ifName,ifAlias,ifSpeed,ifInOctets_rate,ifOutOctets_rate,ifOperStatus,ifAdminStatus`,
+        { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+      );
+      if (!res.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao consultar LibreNMS" });
+      const data = await res.json() as { ports: any[] };
+      return (data.ports || []).filter((p: any) => MONITORED_PORT_IDS.includes(Number(p.port_id)));
+    }),
+
+    // Retorna dados históricos de uma porta específica via RRD
+    getHistory: localAuthProcedure
+      .input(z.object({
+        portId: z.number(),
+        period: z.enum(["1h", "6h", "24h", "7d", "30d"]).default("1h"),
+      }))
+      .query(async ({ input }) => {
+        const LIBRENMS_URL = process.env.LIBRENMS_URL || "http://45.237.165.251:8080";
+        const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN || "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+
+        const periodSeconds: Record<string, number> = {
+          "1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800, "30d": 2592000,
+        };
+        const now = Math.floor(Date.now() / 1000);
+        const from = now - periodSeconds[input.period];
+
+        // Buscar dados da porta atual
+        const portRes = await fetch(
+          `${LIBRENMS_URL}/api/v0/ports/${input.portId}`,
+          { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+        );
+        if (!portRes.ok) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao consultar porta" });
+        const portData = await portRes.json() as { port: any };
+        const port = Array.isArray(portData.port) ? portData.port[0] : portData.port;
+
+        // Ler dados históricos diretamente do RRD via execução local
+        // Como o servidor do app roda no mesmo servidor do LibreNMS, podemos ler diretamente
+        const { execSync } = await import("child_process");
+        const rrdPath = `/opt/librenms/rrd/45.237.164.7/port-id${input.portId}.rrd`;
+        let historyPoints: { ts: number; inBps: number; outBps: number }[] = [];
+
+        try {
+          const output = execSync(
+            `rrdtool fetch ${rrdPath} AVERAGE --start ${from} --end ${now} --resolution 60 2>/dev/null`,
+            { encoding: "utf8", timeout: 5000 }
+          );
+          const lines = output.trim().split("\n").slice(1); // pular header
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 3) continue;
+            const ts = parseInt(parts[0].replace(":", ""));
+            const inOctets = parseFloat(parts[1]);
+            const outOctets = parseFloat(parts[2]);
+            if (isNaN(ts) || isNaN(inOctets) || isNaN(outOctets)) continue;
+            historyPoints.push({ ts, inBps: inOctets * 8, outBps: outOctets * 8 });
+          }
+        } catch {
+          // RRD não disponível ou sem dados ainda
+        }
+
+        return {
+          port,
+          history: historyPoints,
+        };
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;

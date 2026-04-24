@@ -154,3 +154,14 @@
 - [x] Adicionar item "Análise de Tráfego" no menu lateral (DashboardLayout.tsx)
 - [x] Registrar rota /traffic no App.tsx
 - [x] Build e deploy em produção
+
+## Fase 14 — Análise de Tráfego Nativa (Nível 2)
+
+- [x] Gerar token API do LibreNMS e salvar como secret
+- [x] Criar endpoint tRPC proxy para API do LibreNMS (port data + graph data)
+- [x] Implementar página TrafficAnalysis com layout dual-coluna (Upstream / Clientes Dedicados)
+- [x] Cards de interface com sparkline, valores IN/OUT em tempo real e barra de utilização
+- [x] Seletor de período (1h / 6h / 24h / 7d)
+- [x] Auto-refresh a cada 1 minuto
+- [x] Modal/expansão de gráfico completo ao clicar no card
+- [x] Build e deploy em produção
