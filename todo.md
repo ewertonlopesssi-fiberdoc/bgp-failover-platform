@@ -245,3 +245,10 @@
 - [x] Adicionar modal de histórico RTT ao clicar no badge de latência nos cards
 - [x] Instalar cron de ping automático no servidor (a cada 1 min)
 - [x] Build e deploy em produção
+
+## Fase 25 — Correção de IPs de ping
+- [x] CONECTA-TELECOM (portId 104): client_ip → 131.196.240.1 (RTT ~1.27ms)
+- [x] RB-NET (portId 103): client_ip → 45.233.25.1 (RTT ~1.63ms)
+- [x] Remover client_ip de portId 102 (RB-NET antigo 10.22.67.2)
+- [x] Limpar client_ip de HNET-META (portId 108) e HNET-META-BJ (portId 112)
+- [x] Testar ping com novos IPs em produção (ambos respondendo 0% perda)
