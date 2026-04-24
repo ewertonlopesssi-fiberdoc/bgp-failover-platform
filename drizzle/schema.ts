@@ -255,6 +255,41 @@ export const latencyHistory = mysqlTable("latency_history", {
 
 export type LatencyHistory = typeof latencyHistory.$inferSelect;
 
+// Network topology nodes (switches, routers, OLTs on the map)
+export const networkNodes = mysqlTable("network_nodes", {
+  id: int("id").autoincrement().primaryKey(),
+  deviceId: int("deviceId"),           // LibreNMS device_id (optional)
+  name: varchar("name", { length: 150 }).notNull(),
+  city: varchar("city", { length: 100 }),
+  lat: float("lat"),                   // GPS latitude
+  lng: float("lng"),                   // GPS longitude
+  nodeType: mysqlEnum("nodeType", ["router", "switch", "olt", "server", "pop"]).default("switch").notNull(),
+  mgmtIp: varchar("mgmtIp", { length: 45 }),  // management IP
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type NetworkNode = typeof networkNodes.$inferSelect;
+export type InsertNetworkNode = typeof networkNodes.$inferInsert;
+
+// Network topology links (connections between nodes)
+export const networkLinks = mysqlTable("network_links", {
+  id: int("id").autoincrement().primaryKey(),
+  fromNodeId: int("fromNodeId").notNull(),
+  fromPortId: int("fromPortId"),       // LibreNMS port_id for traffic data
+  fromPortName: varchar("fromPortName", { length: 100 }),
+  toNodeId: int("toNodeId").notNull(),
+  toPortId: int("toPortId"),           // LibreNMS port_id for traffic data
+  toPortName: varchar("toPortName", { length: 100 }),
+  linkType: mysqlEnum("linkType", ["fiber", "radio", "copper", "vpn"]).default("fiber").notNull(),
+  capacityBps: float("capacityBps"),   // link capacity in bps (0 = unknown)
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type NetworkLink = typeof networkLinks.$inferSelect;
+export type InsertNetworkLink = typeof networkLinks.$inferInsert;
+
 // Client failover state
 export const clientFailoverState = mysqlTable("client_failover_state", {
   id: int("id").autoincrement().primaryKey(),

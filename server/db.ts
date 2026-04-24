@@ -1,4 +1,4 @@
-import { eq, desc, and, gte } from "drizzle-orm";
+import { eq, desc, and, gte, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -11,6 +11,8 @@ import {
   linuxIncidents,
   interfaceConfigs, InsertInterfaceConfig,
   latencyHistory,
+  networkNodes, InsertNetworkNode,
+  networkLinks, InsertNetworkLink,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -641,4 +643,59 @@ export async function getLatencyHistory(portId: number, sinceMs: number): Promis
     .from(latencyHistory)
     .where(and(eq(latencyHistory.portId, portId), gte(latencyHistory.measuredAt, since)))
     .orderBy(latencyHistory.measuredAt);
+}
+// ─── Network Topology ──────────────────────────────────────────────────────
+
+export async function listNetworkNodes() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(networkNodes).orderBy(networkNodes.name);
+}
+
+export async function createNetworkNode(data: Omit<InsertNetworkNode, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(networkNodes).values(data);
+  return result;
+}
+
+export async function updateNetworkNode(id: number, data: Partial<Omit<InsertNetworkNode, "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(networkNodes).set(data).where(eq(networkNodes.id, id));
+}
+
+export async function deleteNetworkNode(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Also delete associated links
+  await db.delete(networkLinks).where(
+    or(eq(networkLinks.fromNodeId, id), eq(networkLinks.toNodeId, id))
+  );
+  await db.delete(networkNodes).where(eq(networkNodes.id, id));
+}
+
+export async function listNetworkLinks() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(networkLinks).orderBy(networkLinks.id);
+}
+
+export async function createNetworkLink(data: Omit<InsertNetworkLink, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(networkLinks).values(data);
+  return result;
+}
+
+export async function updateNetworkLink(id: number, data: Partial<Omit<InsertNetworkLink, "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(networkLinks).set(data).where(eq(networkLinks.id, id));
+}
+
+export async function deleteNetworkLink(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(networkLinks).where(eq(networkLinks.id, id));
 }

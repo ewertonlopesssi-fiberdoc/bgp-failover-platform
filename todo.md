@@ -252,3 +252,18 @@
 - [x] Remover client_ip de portId 102 (RB-NET antigo 10.22.67.2)
 - [x] Limpar client_ip de HNET-META (portId 108) e HNET-META-BJ (portId 112)
 - [x] Testar ping com novos IPs em produção (ambos respondendo 0% perda)
+
+## Fase 26 — Mapa de Rede Geográfico
+- [x] Criar tabelas network_nodes (id, deviceId, name, city, lat, lng, type, active) e network_links (id, fromNodeId, fromPortId, toNodeId, toPortId, linkType, active) no schema Drizzle
+- [x] Gerar migration e aplicar em produção e dev
+- [x] Helpers db.ts: listNetworkNodes, createNetworkNode, updateNetworkNode, deleteNetworkNode, listNetworkLinks, createNetworkLink, updateNetworkLink, deleteNetworkLink
+- [x] Endpoints tRPC: network.nodes (list, create, update, delete) e network.links (list, create, update, delete)
+- [x] Endpoint tRPC: network.getLibreNMSDevices (importar dispositivos do LibreNMS)
+- [x] Endpoint tRPC: network.getLinkTraffic (tráfego em tempo real por portId de link)
+- [x] Página NetworkMap.tsx com Google Maps, marcadores de switches e linhas de links com tráfego
+- [x] Painel lateral de cadastro/edição de nós (nome, cidade, lat/lng, tipo, deviceId LibreNMS)
+- [x] Painel lateral de cadastro/edição de links (fromNode+porta, toNode+porta, tipo de link)
+- [x] Importação automática de dispositivos do LibreNMS com geocoding por cidade
+- [x] Adicionar item "Mapa de Rede" no menu lateral (DashboardLayout.tsx)
+- [x] Registrar rota /network-map no App.tsx
+- [x] Build e deploy em produção

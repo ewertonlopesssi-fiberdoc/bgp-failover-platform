@@ -930,6 +930,156 @@ export const appRouter = router({
         }));
       }),
   }),
+
+  network: router({
+    // List all nodes
+    listNodes: localAuthProcedure.query(async () => {
+      return db.listNetworkNodes();
+    }),
+
+    // Create a node
+    createNode: adminProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        city: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        nodeType: z.enum(["router", "switch", "olt", "server", "pop"]).default("switch"),
+        mgmtIp: z.string().optional(),
+        deviceId: z.number().optional(),
+        active: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }) => {
+        await db.createNetworkNode(input);
+        return { success: true };
+      }),
+
+    // Update a node
+    updateNode: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        city: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        nodeType: z.enum(["router", "switch", "olt", "server", "pop"]).optional(),
+        mgmtIp: z.string().optional(),
+        deviceId: z.number().optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateNetworkNode(id, data);
+        return { success: true };
+      }),
+
+    // Delete a node (also deletes associated links)
+    deleteNode: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteNetworkNode(input.id);
+        return { success: true };
+      }),
+
+    // List all links
+    listLinks: localAuthProcedure.query(async () => {
+      return db.listNetworkLinks();
+    }),
+
+    // Create a link
+    createLink: adminProcedure
+      .input(z.object({
+        fromNodeId: z.number(),
+        fromPortId: z.number().optional(),
+        fromPortName: z.string().optional(),
+        toNodeId: z.number(),
+        toPortId: z.number().optional(),
+        toPortName: z.string().optional(),
+        linkType: z.enum(["fiber", "radio", "copper", "vpn"]).default("fiber"),
+        capacityBps: z.number().optional(),
+        active: z.boolean().default(true),
+      }))
+      .mutation(async ({ input }) => {
+        await db.createNetworkLink(input);
+        return { success: true };
+      }),
+
+    // Update a link
+    updateLink: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        fromPortId: z.number().optional(),
+        fromPortName: z.string().optional(),
+        toPortId: z.number().optional(),
+        toPortName: z.string().optional(),
+        linkType: z.enum(["fiber", "radio", "copper", "vpn"]).optional(),
+        capacityBps: z.number().optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await db.updateNetworkLink(id, data);
+        return { success: true };
+      }),
+
+    // Delete a link
+    deleteLink: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteNetworkLink(input.id);
+        return { success: true };
+      }),
+
+    // Get LibreNMS devices for import
+    getLibreNMSDevices: adminProcedure.query(async () => {
+      const LIBRENMS_URL = "http://45.237.165.251:8080";
+      const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+      try {
+        const resp = await fetch(`${LIBRENMS_URL}/api/v0/devices`, {
+          headers: { "X-Auth-Token": LIBRENMS_TOKEN },
+        });
+        const data = await resp.json() as { devices?: Array<{ device_id: number; hostname: string; sysName: string; location: string; ip: string; status: number }> };
+        return (data.devices || []).map((d) => ({
+          deviceId: d.device_id,
+          name: d.sysName || d.hostname,
+          mgmtIp: d.ip,
+          location: d.location || "",
+          online: d.status === 1,
+        }));
+      } catch {
+        return [];
+      }
+    }),
+
+    // Get live traffic for a port (used by link lines on the map)
+    getLinkTraffic: localAuthProcedure
+      .input(z.object({ portId: z.number() }))
+      .query(async ({ input }) => {
+        const LIBRENMS_URL = "http://45.237.165.251:8080";
+        const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+        try {
+          const resp = await fetch(
+            `${LIBRENMS_URL}/api/v0/port/${input.portId}`,
+            { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+          );
+          const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifSpeed?: number; ifOperStatus?: string } };
+          const port = data.port;
+          if (!port) return null;
+          const inBps = (port.ifInOctets_rate || 0) * 8;
+          const outBps = (port.ifOutOctets_rate || 0) * 8;
+          const speed = port.ifSpeed || 0;
+          return {
+            inBps,
+            outBps,
+            speed,
+            utilPct: speed > 0 ? Math.round(Math.max(inBps, outBps) / speed * 100) : 0,
+            status: port.ifOperStatus || "unknown",
+          };
+        } catch {
+          return null;
+        }
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;
 
