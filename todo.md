@@ -279,3 +279,8 @@
 ## Fase 26c — Correção do mapa Leaflet (container sem altura)
 - [x] Corrigir MapContainer para ter altura explícita (não depender de flex-1 do pai)
 - [x] Build e deploy em produção
+
+## Fase 26d — Correções do painel Gerenciar e fluxo de links
+- [x] Corrigir z-index do painel lateral (fica atrás do mapa Leaflet)
+- [x] Melhorar fluxo de criação de links: selecionar nó de origem e destino visualmente
+- [x] Build e deploy em produção
