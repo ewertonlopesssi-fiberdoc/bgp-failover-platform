@@ -508,12 +508,34 @@ export default function NetworkMap() {
             );
           })}
 
-          {/* Draw nodes (markers) */}
+          {/* Draw nodes (markers) — draggable to reposition */}
           {nodesWithCoords.map((node) => (
             <Marker
               key={node.id}
               position={[node.lat!, node.lng!]}
               icon={makeNodeIcon(node as NetworkNode)}
+              draggable={true}
+              eventHandlers={{
+                dragend(e) {
+                  const latlng = (e.target as L.Marker).getLatLng();
+                  updateNode.mutate(
+                    {
+                      id: node.id,
+                      name: node.name,
+                      city: node.city ?? undefined,
+                      nodeType: node.nodeType as NodeType,
+                      mgmtIp: node.mgmtIp ?? undefined,
+                      lat: latlng.lat,
+                      lng: latlng.lng,
+                      active: node.active ?? true,
+                    },
+                    {
+                      onSuccess: () => { refetchNodes(); toast.success(`${node.name} reposicionado`); },
+                      onError: (err) => toast.error(`Erro ao mover: ${err.message}`),
+                    }
+                  );
+                },
+              }}
             >
               <Popup>
                 <div style={{ fontFamily: "sans-serif", minWidth: 180 }}>
@@ -528,6 +550,7 @@ export default function NetworkMap() {
                       {node.active ? "Ativo" : "Inativo"}
                     </span>
                   </div>
+                  <div style={{ marginTop: 6, color: "#9ca3af", fontSize: 11 }}>✋ Arraste para reposicionar</div>
                 </div>
               </Popup>
             </Marker>

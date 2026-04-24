@@ -286,6 +286,11 @@
 - [x] Build e deploy em produção
 
 ## Fase 26e — Bug: edição de nó não salva coordenadas
-- [ ] Investigar updateNode no routers.ts — verificar se lat/lng estão sendo passados corretamente
-- [ ] Corrigir o formulário de edição no NetworkMap.tsx — verificar se nodeForm está populado ao abrir edição
-- [ ] Build e deploy em produção
+- [x] Investigar updateNode no routers.ts — backend funciona (confirmado via API direta)
+- [x] Corrigir o formulário de edição no NetworkMap.tsx — adicionado onError visível + tratamento FORBIDDEN
+- [x] Build e deploy em produção
+
+## Fase 27 — Marcadores arrastáveis no mapa
+- [x] Adicionar draggable nos Markers do Leaflet com atualização automática de lat/lng ao soltar
+- [x] Toast de confirmação ao soltar o marcador
+- [x] Build e deploy em produção
