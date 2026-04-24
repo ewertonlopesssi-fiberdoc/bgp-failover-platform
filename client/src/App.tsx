@@ -16,6 +16,7 @@ import AuditLogs from "./pages/AuditLogs";
 import DestinationsManagement from "./pages/DestinationsManagement";
 import OperatorsManagement from "./pages/OperatorsManagement";
 import LinuxMonitor from "./pages/LinuxMonitor";
+import TrafficAnalysis from "./pages/TrafficAnalysis";
 import DashboardLayout from "./components/DashboardLayout";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -47,6 +48,7 @@ function Router() {
       <Route path="/destinations" component={() => <ProtectedRoute component={DestinationsManagement} />} />
       <Route path="/operators" component={() => <ProtectedRoute component={OperatorsManagement} />} />
       <Route path="/linux-monitor" component={() => <ProtectedRoute component={LinuxMonitor} />} />
+      <Route path="/traffic" component={() => <ProtectedRoute component={TrafficAnalysis} />} />
       <Route component={() => <Redirect to="/" />} />
     </Switch>
   );

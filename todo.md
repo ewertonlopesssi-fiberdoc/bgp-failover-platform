@@ -131,13 +131,26 @@
 - [x] Corrigir erro de runtime do LinuxMonitor em produção (query linux_probes — era apenas no dev server local, produção OK)
 
 ## Fase 12 - Renotificação Configurável + Histórico de Incidentes
-- [ ] Schema: adicionar alertRepeatMinutes (int, default 5) em linux_destinations
-- [ ] Schema: criar tabela linux_incidents (id, destinationId, probeId, type, startedAt, endedAt, avgLatency, avgLoss, maxLatency, maxLoss, resolved)
-- [ ] Migração SQL em produção para novos campos/tabelas
-- [ ] linuxMonitor.ts: usar alertRepeatMinutes por destino em vez do fixo 5min
-- [ ] linuxMonitor.ts: persistir incidente no banco ao iniciar e ao resolver
-- [ ] db.ts: funções listLinuxIncidents, createLinuxIncident, resolveLinuxIncident
-- [ ] routers.ts: endpoint linuxIncidents.list (por probe ou destino, paginado)
-- [ ] LinuxMonitor.tsx: campo alertRepeatMinutes no formulário de edição (select: 2, 5, 10, 15, 30 min)
-- [ ] LinuxMonitor.tsx: aba "Incidentes" por probe com tabela histórica (tipo, destino, início, fim, duração, médias)
-- [ ] Deploy em produção
+- [x] Schema: adicionar alertRepeatMinutes (int, default 5) em linux_destinations
+- [x] Schema: criar tabela linux_incidents (id, destinationId, probeId, type, startedAt, endedAt, avgLatency, avgLoss, maxLatency, maxLoss, resolved)
+- [x] Migração SQL em produção para novos campos/tabelas
+- [x] linuxMonitor.ts: usar alertRepeatMinutes por destino em vez do fixo 5min
+- [x] linuxMonitor.ts: persistir incidente no banco ao iniciar e ao resolver
+- [x] db.ts: funções listLinuxIncidents, createLinuxIncident, resolveLinuxIncident com JOIN (destinationName, probeName)
+- [x] routers.ts: endpoint linuxIncidents.list (por probe ou destino, paginado)
+- [x] LinuxMonitor.tsx: campo alertRepeatMinutes no formulário de edição (select: 2, 5, 10, 15, 30 min)
+- [x] LinuxMonitor.tsx: aba "Incidentes" por probe com tabela histórica (tipo, destino+host, probe, início, fim, duração, médias)
+- [x] Deploy em produção
+
+## Fase 13 — LibreNMS Nível 1 (iframe no menu)
+
+- [x] Instalar dependências PHP 8.1, nginx, rrdtool, composer no servidor Debian
+- [x] Clonar LibreNMS em /opt/librenms e configurar permissões
+- [x] Criar banco de dados librenms no MySQL de produção
+- [x] Configurar virtual host nginx para LibreNMS na porta 8080
+- [x] Executar instalação e validação do LibreNMS (validate.php)
+- [x] Configurar cron do poller do LibreNMS
+- [x] Criar página TrafficAnalysis.tsx com iframe apontando para LibreNMS
+- [x] Adicionar item "Análise de Tráfego" no menu lateral (DashboardLayout.tsx)
+- [x] Registrar rota /traffic no App.tsx
+- [x] Build e deploy em produção

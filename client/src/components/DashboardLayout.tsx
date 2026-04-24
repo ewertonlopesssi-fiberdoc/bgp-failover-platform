@@ -5,7 +5,7 @@ import { useLocalAuth } from "@/hooks/useLocalAuth";
 import { toast } from "sonner";
 import {
   LayoutDashboard, Server, MessageSquare, Users, Network,
-  Activity, FileText, LogOut, Menu, ChevronRight, Radio, Map, Monitor
+  Activity, FileText, LogOut, Menu, ChevronRight, Radio, Map, Monitor, BarChart2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ const navItems = [
   { href: "/service", label: "Controle do Serviço", icon: Server },
   { href: "/latency", label: "Gráficos de Latência", icon: Activity },
   { href: "/linux-monitor", label: "Monitor Linux", icon: Monitor },
+  { href: "/traffic", label: "Análise de Tráfego", icon: BarChart2 },
   { href: "/clients", label: "Clientes Dedicados", icon: Network },
   { href: "/destinations", label: "Destinos Monitorados", icon: Map },
   { href: "/ne8000", label: "Configurar Ne8000", icon: Radio },
