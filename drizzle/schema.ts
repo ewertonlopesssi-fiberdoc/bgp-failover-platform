@@ -176,6 +176,7 @@ export const linuxDestinations = mysqlTable("linux_destinations", {
   offlineAlert: mysqlEnum("offlineAlert", ["never", "1", "2", "3", "5"]).default("never").notNull(), // consecutive failures before alert
   latencyThreshold: int("latencyThreshold").default(0).notNull(),   // ms, 0 = disabled
   lossThreshold: int("lossThreshold").default(0).notNull(),          // %, 0 = disabled
+  alertRepeatMinutes: int("alertRepeatMinutes").default(5).notNull(), // minutes between repeat alerts during incident
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -192,8 +193,23 @@ export const linuxDestMetrics = mysqlTable("linux_dest_metrics", {
   measuredAt: timestamp("measuredAt").defaultNow().notNull(),
 });
 export type LinuxDestMetric = typeof linuxDestMetrics.$inferSelect;
-
-// Audit / event log
+// Linux Incidents — persistent incident history per destination
+export const linuxIncidents = mysqlTable("linux_incidents", {
+  id: int("id").autoincrement().primaryKey(),
+  destinationId: int("destinationId").notNull(),
+  probeId: int("probeId").notNull(),
+  type: mysqlEnum("type", ["offline", "latency", "loss", "both"]).notNull(), // type of incident
+  startedAt: timestamp("startedAt").notNull(),
+  endedAt: timestamp("endedAt"),                // null = still ongoing
+  avgLatencyMs: float("avgLatencyMs").default(0).notNull(),
+  avgLoss: float("avgLoss").default(0).notNull(),
+  maxLatencyMs: float("maxLatencyMs").default(0).notNull(),
+  maxLoss: float("maxLoss").default(0).notNull(),
+  resolved: boolean("resolved").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type LinuxIncident = typeof linuxIncidents.$inferSelect;
+// Audit / event logg
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
   type: mysqlEnum("type", ["failover", "recovery", "config_change", "alert", "service", "auth", "info"]).notNull(),

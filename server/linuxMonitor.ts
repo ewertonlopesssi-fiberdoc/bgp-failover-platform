@@ -8,18 +8,20 @@
  *
  * Telegram notifications:
  *  - Offline alert: sent after N consecutive failures (configurable per destination)
- *  - Periodic "still offline": every 5 minutes with average loss and duration
+ *  - Periodic "still offline": every alertRepeatMinutes with average loss and duration
  *  - Recovery: includes total incident duration and average loss during the incident
  *  - Threshold breach: sent when latency/loss exceeds configured limits
- *  - Periodic "still degraded": every 5 minutes with average latency/loss and duration
+ *  - Periodic "still degraded": every alertRepeatMinutes with average latency/loss and duration
  *  - Threshold normalized: includes duration and averages during the degradation period
+ *
+ * Incidents are persisted in the linux_incidents table for historical consultation.
  */
 import { exec } from "child_process";
 import { promisify } from "util";
 import { drizzle } from "drizzle-orm/mysql2";
 import { eq, and } from "drizzle-orm";
 import { linuxProbes, linuxDestinations } from "../drizzle/schema";
-import { addLinuxDestMetric } from "./db";
+import { addLinuxDestMetric, createLinuxIncident, resolveLinuxIncident } from "./db";
 import { sendTelegramMessage } from "./telegram";
 
 const execAsync = promisify(exec);
@@ -113,12 +115,13 @@ const alertSent = new Map<number, boolean>();
 // Whether a threshold alert has already been sent
 const thresholdAlertSent = new Map<number, boolean>();
 
-// Incident state: tracks start time, samples, and last periodic notification
+// Incident state: tracks start time, samples, last periodic notification, and DB incident ID
 interface IncidentState {
   startedAt: number;           // timestamp ms when incident began
   lossSamples: number[];       // packet loss % samples during incident
   latencySamples: number[];    // latency ms samples during incident
-  lastNotifiedMinute: number;  // last 5-min mark at which periodic notification was sent
+  lastNotifiedMinute: number;  // last repeat-interval mark at which periodic notification was sent
+  dbIncidentId?: number;       // ID of the persisted incident in the database
 }
 
 const offlineIncident = new Map<number, IncidentState>();
@@ -141,6 +144,11 @@ function avg(arr: number[]): number {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+function maxOf(arr: number[]): number {
+  if (!arr.length) return 0;
+  return Math.max(...arr);
+}
+
 function ptDate(ts: number): string {
   return new Date(ts).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
@@ -150,11 +158,13 @@ function ptDate(ts: number): string {
 async function handleAlerts(
   dest: {
     id: number;
+    probeId: number;
     name: string;
     host: string;
     offlineAlert: string;
     latencyThreshold: number;
     lossThreshold: number;
+    alertRepeatMinutes: number;
   },
   probeName: string,
   result: PingResult
@@ -162,6 +172,7 @@ async function handleAlerts(
   const isOffline = result.packetLoss >= 100;
   const currentFailures = failureCount.get(dest.id) ?? 0;
   const now = Date.now();
+  const repeatMs = (dest.alertRepeatMinutes ?? 5) * 60000;
 
   // ── Offline alert ──────────────────────────────────────────────────────
   if (dest.offlineAlert !== "never") {
@@ -188,6 +199,14 @@ async function handleAlerts(
       // Initial offline alert (fires exactly when consecutive count reaches threshold)
       if (newCount === threshold && !alertSent.get(dest.id)) {
         alertSent.set(dest.id, true);
+        // Persist incident in DB
+        const dbId = await createLinuxIncident({
+          destinationId: dest.id,
+          probeId: dest.probeId,
+          type: "offline",
+          startedAt: new Date(inc.startedAt),
+        });
+        if (dbId) inc.dbIncidentId = dbId;
         const msg =
           `🔴 *Monitor Linux — Destino OFFLINE*\n\n` +
           `📍 Probe: *${probeName}*\n` +
@@ -199,13 +218,12 @@ async function handleAlerts(
         console.log(`[LinuxMonitor] Alerta Telegram: ${dest.name} offline após ${newCount} falhas`);
       }
 
-      // Periodic "still offline" notification every 5 minutes
+      // Periodic "still offline" notification every alertRepeatMinutes
       if (alertSent.get(dest.id)) {
         const elapsedMs = now - inc.startedAt;
-        const elapsedMinutes = Math.floor(elapsedMs / 60000);
-        const minuteMark = Math.floor(elapsedMinutes / 5) * 5;
-        if (minuteMark > 0 && minuteMark !== inc.lastNotifiedMinute) {
-          inc.lastNotifiedMinute = minuteMark;
+        const repeatMark = Math.floor(elapsedMs / repeatMs);
+        if (repeatMark > 0 && repeatMark !== inc.lastNotifiedMinute) {
+          inc.lastNotifiedMinute = repeatMark;
           const avgLoss = avg(inc.lossSamples).toFixed(1);
           const msg =
             `🔴 *Monitor Linux — Destino ainda OFFLINE*\n\n` +
@@ -225,6 +243,16 @@ async function handleAlerts(
         const inc = offlineIncident.get(dest.id);
         const durationStr = inc ? formatDuration(now - inc.startedAt) : "desconhecido";
         const avgLoss = inc ? avg(inc.lossSamples).toFixed(1) : "?";
+        // Resolve incident in DB
+        if (inc?.dbIncidentId) {
+          await resolveLinuxIncident(inc.dbIncidentId, {
+            endedAt: new Date(now),
+            avgLatencyMs: avg(inc.latencySamples),
+            avgLoss: avg(inc.lossSamples),
+            maxLatencyMs: maxOf(inc.latencySamples),
+            maxLoss: maxOf(inc.lossSamples),
+          });
+        }
         const msg =
           `🟢 *Monitor Linux — Destino RECUPERADO*\n\n` +
           `📍 Probe: *${probeName}*\n` +
@@ -240,15 +268,33 @@ async function handleAlerts(
       failureCount.set(dest.id, 0);
     }
   } else {
-    // offlineAlert === "never": still track incident for potential future use
+    // offlineAlert === "never": still track incident for DB persistence
     if (isOffline) {
       failureCount.set(dest.id, currentFailures + 1);
       if (!offlineIncident.has(dest.id)) {
         offlineIncident.set(dest.id, { startedAt: now, lossSamples: [result.packetLoss], latencySamples: [], lastNotifiedMinute: 0 });
+        // Persist incident even without Telegram alert
+        const dbId = await createLinuxIncident({
+          destinationId: dest.id,
+          probeId: dest.probeId,
+          type: "offline",
+          startedAt: new Date(now),
+        });
+        if (dbId) offlineIncident.get(dest.id)!.dbIncidentId = dbId;
       } else {
         offlineIncident.get(dest.id)!.lossSamples.push(result.packetLoss);
       }
     } else {
+      const inc = offlineIncident.get(dest.id);
+      if (inc?.dbIncidentId) {
+        await resolveLinuxIncident(inc.dbIncidentId, {
+          endedAt: new Date(now),
+          avgLatencyMs: avg(inc.latencySamples),
+          avgLoss: avg(inc.lossSamples),
+          maxLatencyMs: maxOf(inc.latencySamples),
+          maxLoss: maxOf(inc.lossSamples),
+        });
+      }
       offlineIncident.delete(dest.id);
       failureCount.set(dest.id, 0);
     }
@@ -259,6 +305,13 @@ async function handleAlerts(
     const latencyExceeded = dest.latencyThreshold > 0 && result.latencyMs > dest.latencyThreshold;
     const lossExceeded = dest.lossThreshold > 0 && result.packetLoss > dest.lossThreshold;
     const thresholdBreached = latencyExceeded || lossExceeded;
+
+    // Determine incident type
+    const incidentType = (): "latency" | "loss" | "both" => {
+      if (latencyExceeded && lossExceeded) return "both";
+      if (latencyExceeded) return "latency";
+      return "loss";
+    };
 
     // Helper functions to differentiate scenario in messages
     const scenarioLabel = (): string => {
@@ -315,6 +368,14 @@ async function handleAlerts(
       if (!thresholdAlertSent.get(dest.id)) {
         // Initial threshold alert — differentiated by scenario
         thresholdAlertSent.set(dest.id, true);
+        // Persist threshold incident in DB
+        const dbId = await createLinuxIncident({
+          destinationId: dest.id,
+          probeId: dest.probeId,
+          type: incidentType(),
+          startedAt: new Date(inc.startedAt),
+        });
+        if (dbId) inc.dbIncidentId = dbId;
         const msg =
           `${scenarioEmoji()} *Monitor Linux — ${scenarioLabel()}*\n\n` +
           `📍 Probe: *${probeName}*\n` +
@@ -324,12 +385,11 @@ async function handleAlerts(
         await sendTelegramMessage(msg);
         console.log(`[LinuxMonitor] Alerta de limiar (${scenarioLabel()}): ${dest.name}`);
       } else {
-        // Periodic "still degraded" notification every 5 minutes
+        // Periodic "still degraded" notification every alertRepeatMinutes
         const elapsedMs = now - inc.startedAt;
-        const elapsedMinutes = Math.floor(elapsedMs / 60000);
-        const minuteMark = Math.floor(elapsedMinutes / 5) * 5;
-        if (minuteMark > 0 && minuteMark !== inc.lastNotifiedMinute) {
-          inc.lastNotifiedMinute = minuteMark;
+        const repeatMark = Math.floor(elapsedMs / repeatMs);
+        if (repeatMark > 0 && repeatMark !== inc.lastNotifiedMinute) {
+          inc.lastNotifiedMinute = repeatMark;
           const avgLoss = avg(inc.lossSamples).toFixed(1);
           const avgLat = avg(inc.latencySamples).toFixed(1);
           const msg =
@@ -350,6 +410,16 @@ async function handleAlerts(
       const durationStr = inc ? formatDuration(now - inc.startedAt) : "desconhecido";
       const avgLoss = inc?.lossSamples.length ? avg(inc.lossSamples).toFixed(1) : null;
       const avgLat = inc?.latencySamples.length ? avg(inc.latencySamples).toFixed(1) : null;
+      // Resolve threshold incident in DB
+      if (inc?.dbIncidentId) {
+        await resolveLinuxIncident(inc.dbIncidentId, {
+          endedAt: new Date(now),
+          avgLatencyMs: avg(inc.latencySamples),
+          avgLoss: avg(inc.lossSamples),
+          maxLatencyMs: maxOf(inc.latencySamples),
+          maxLoss: maxOf(inc.lossSamples),
+        });
+      }
       const msg =
         `✅ *Monitor Linux — Métricas Normalizadas*\n\n` +
         `📍 Probe: *${probeName}*\n` +
@@ -408,11 +478,13 @@ export async function runLinuxMonitorCycle() {
         await handleAlerts(
           {
             id: dest.id,
+            probeId: probe.id,
             name: dest.name,
             host: dest.host,
             offlineAlert: dest.offlineAlert,
             latencyThreshold: dest.latencyThreshold,
             lossThreshold: dest.lossThreshold,
+            alertRepeatMinutes: dest.alertRepeatMinutes ?? 5,
           },
           probe.name,
           result

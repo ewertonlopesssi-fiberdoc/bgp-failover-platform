@@ -8,6 +8,7 @@ import {
   latencyMetrics, auditLogs, clientFailoverState,
   linuxProbes, linuxMetrics, LinuxProbe,
   linuxDestinations, linuxDestMetrics, LinuxDestination,
+  linuxIncidents,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -495,4 +496,53 @@ export async function clearLinuxDestMetrics(destinationId?: number) {
     ? await db.delete(linuxDestMetrics).where(eq(linuxDestMetrics.destinationId, destinationId))
     : await db.delete(linuxDestMetrics);
   return (result as any)[0]?.affectedRows ?? 0;
+}
+// ─── Linux Incidents ───────────────────────────────────────────────────────────────────────────────────────
+export async function createLinuxIncident(data: {
+  destinationId: number;
+  probeId: number;
+  type: "offline" | "latency" | "loss" | "both";
+  startedAt: Date;
+}) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(linuxIncidents).values({
+    ...data,
+    avgLatencyMs: 0,
+    avgLoss: 0,
+    maxLatencyMs: 0,
+    maxLoss: 0,
+    resolved: false,
+  });
+  return (result as any)[0]?.insertId as number | undefined;
+}
+export async function resolveLinuxIncident(id: number, data: {
+  endedAt: Date;
+  avgLatencyMs: number;
+  avgLoss: number;
+  maxLatencyMs: number;
+  maxLoss: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(linuxIncidents)
+    .set({ ...data, resolved: true })
+    .where(eq(linuxIncidents.id, id));
+}
+export async function listLinuxIncidents(params: {
+  probeId?: number;
+  destinationId?: number;
+  limit?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (params.probeId) conditions.push(eq(linuxIncidents.probeId, params.probeId));
+  if (params.destinationId) conditions.push(eq(linuxIncidents.destinationId, params.destinationId));
+  return db
+    .select()
+    .from(linuxIncidents)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(linuxIncidents.startedAt))
+    .limit(params.limit ?? 100);
 }

@@ -129,3 +129,15 @@
 ## Fase 11 - Correções Pendentes
 - [x] Adicionar ação 'Remover' no menu de contexto dos cards da grade compacta (com confirmação)
 - [x] Corrigir erro de runtime do LinuxMonitor em produção (query linux_probes — era apenas no dev server local, produção OK)
+
+## Fase 12 - Renotificação Configurável + Histórico de Incidentes
+- [ ] Schema: adicionar alertRepeatMinutes (int, default 5) em linux_destinations
+- [ ] Schema: criar tabela linux_incidents (id, destinationId, probeId, type, startedAt, endedAt, avgLatency, avgLoss, maxLatency, maxLoss, resolved)
+- [ ] Migração SQL em produção para novos campos/tabelas
+- [ ] linuxMonitor.ts: usar alertRepeatMinutes por destino em vez do fixo 5min
+- [ ] linuxMonitor.ts: persistir incidente no banco ao iniciar e ao resolver
+- [ ] db.ts: funções listLinuxIncidents, createLinuxIncident, resolveLinuxIncident
+- [ ] routers.ts: endpoint linuxIncidents.list (por probe ou destino, paginado)
+- [ ] LinuxMonitor.tsx: campo alertRepeatMinutes no formulário de edição (select: 2, 5, 10, 15, 30 min)
+- [ ] LinuxMonitor.tsx: aba "Incidentes" por probe com tabela histórica (tipo, destino, início, fim, duração, médias)
+- [ ] Deploy em produção

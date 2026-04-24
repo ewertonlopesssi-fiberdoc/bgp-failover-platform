@@ -76,8 +76,10 @@ import {
   TrendingDown,
   LayoutGrid,
   List,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +95,7 @@ interface DestinationForm {
   offlineAlert: OfflineAlert;
   latencyThreshold: number;
   lossThreshold: number;
+  alertRepeatMinutes: number;
 }
 
 interface HistoryTarget {
@@ -822,6 +825,21 @@ function DestinationFormFields({ form, setForm }: { form: DestinationForm; setFo
             <Input id="dest-loss-thr" type="number" min={0} max={100} value={form.lossThreshold} onChange={(e) => setForm({ ...form, lossThreshold: parseInt(e.target.value) || 0 })} />
           </div>
         </div>
+          <div className="col-span-2">
+            <Label htmlFor="dest-repeat">Renotificar a cada <span className="text-muted-foreground font-normal">(durante incidente ativo)</span></Label>
+            <Select value={String(form.alertRepeatMinutes)} onValueChange={(v) => setForm({ ...form, alertRepeatMinutes: parseInt(v) })}>
+              <SelectTrigger id="dest-repeat"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">A cada 1 minuto</SelectItem>
+                <SelectItem value="2">A cada 2 minutos</SelectItem>
+                <SelectItem value="5">A cada 5 minutos</SelectItem>
+                <SelectItem value="10">A cada 10 minutos</SelectItem>
+                <SelectItem value="15">A cada 15 minutos</SelectItem>
+                <SelectItem value="30">A cada 30 minutos</SelectItem>
+                <SelectItem value="60">A cada 1 hora</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         <p className="text-xs text-muted-foreground mt-2">Alertas via Telegram quando latência ou perda ultrapassam os valores acima.</p>
       </div>
     </div>
@@ -856,7 +874,7 @@ function ProbeSection({
 
   const makeDefaultForm = (): DestinationForm => ({
     probeId: probe.id, name: "", host: "", packetSize: 32, packetCount: 5,
-    frequency: 30, offlineAlert: "never", latencyThreshold: 0, lossThreshold: 0,
+    frequency: 30, offlineAlert: "never", latencyThreshold: 0, lossThreshold: 0, alertRepeatMinutes: 5,
   });
 
   const [form, setForm] = useState<DestinationForm>(makeDefaultForm);
@@ -897,6 +915,7 @@ function ProbeSection({
       packetSize: dest.packetSize, packetCount: dest.packetCount,
       frequency: dest.frequency, offlineAlert: dest.offlineAlert as OfflineAlert,
       latencyThreshold: dest.latencyThreshold ?? 0, lossThreshold: dest.lossThreshold ?? 0,
+      alertRepeatMinutes: dest.alertRepeatMinutes ?? 5,
     });
   }
 
@@ -1183,7 +1202,134 @@ function ProbeSection({
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────
+// ── Incidents tab ──────────────────────────────────────────────────────────────────
+
+function IncidentsTab({ probes }: { probes: { id: number; name: string }[] }) {
+  const [filterProbeId, setFilterProbeId] = useState<number | undefined>(undefined);
+  const { data: incidents, isLoading } = trpc.linuxIncidents.list.useQuery(
+    { probeId: filterProbeId, limit: 200 },
+    { refetchInterval: 30000 }
+  );
+
+  const typeLabel = (t: string) => {
+    if (t === "offline") return { label: "Offline", color: "text-red-400", bg: "bg-red-900/30" };
+    if (t === "latency") return { label: "Lat. alta", color: "text-yellow-400", bg: "bg-yellow-900/30" };
+    if (t === "loss") return { label: "Perda", color: "text-orange-400", bg: "bg-orange-900/30" };
+    return { label: "Severo", color: "text-red-300", bg: "bg-red-900/50" };
+  };
+
+  const formatDuration = (start: Date | string, end?: Date | string | null) => {
+    const s = new Date(start).getTime();
+    const e = end ? new Date(end).getTime() : Date.now();
+    const diff = Math.floor((e - s) / 1000);
+    if (diff < 60) return `${diff}s`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}min ${diff % 60}s`;
+    return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}min`;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm text-muted-foreground">Filtrar por probe:</span>
+        <Select
+          value={filterProbeId ? String(filterProbeId) : "all"}
+          onValueChange={(v) => setFilterProbeId(v === "all" ? undefined : Number(v))}
+        >
+          <SelectTrigger className="w-48 h-8 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as probes</SelectItem>
+            {probes.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Activity className="h-8 w-8 mx-auto mb-2 animate-pulse" />
+          <p>Carregando incidentes...</p>
+        </div>
+      ) : !incidents?.length ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <ClipboardList className="h-10 w-10 mx-auto mb-3 text-muted-foreground opacity-40" />
+            <p className="text-muted-foreground">Nenhum incidente registrado.</p>
+            <p className="text-xs text-muted-foreground mt-1">Os incidentes são registrados automaticamente quando um destino fica offline ou excede os limiares configurados.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Tipo</th>
+                <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Destino</th>
+                <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Probe</th>
+                <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Início</th>
+                <th className="text-left py-2 px-3 text-xs text-muted-foreground font-medium">Fim</th>
+                <th className="text-center py-2 px-3 text-xs text-muted-foreground font-medium">Duração</th>
+                <th className="text-center py-2 px-3 text-xs text-muted-foreground font-medium">Lat. média</th>
+                <th className="text-center py-2 px-3 text-xs text-muted-foreground font-medium">Perda média</th>
+                <th className="text-center py-2 px-3 text-xs text-muted-foreground font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incidents.map((inc) => {
+                const t = typeLabel(inc.type);
+                return (
+                  <tr key={inc.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="py-2 px-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${t.color} ${t.bg}`}>
+                        {t.label}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-xs font-mono text-muted-foreground">#{inc.destinationId}</td>
+                    <td className="py-2 px-3 text-xs font-mono text-muted-foreground">#{inc.probeId}</td>
+                    <td className="py-2 px-3 text-xs">{new Date(inc.startedAt).toLocaleString("pt-BR")}</td>
+                    <td className="py-2 px-3 text-xs">
+                      {inc.endedAt
+                        ? new Date(inc.endedAt).toLocaleString("pt-BR")
+                        : <span className="text-amber-400 font-medium">Em andamento</span>}
+                    </td>
+                    <td className="py-2 px-3 text-center text-xs font-mono">
+                      {formatDuration(inc.startedAt, inc.endedAt)}
+                    </td>
+                    <td className="py-2 px-3 text-center text-xs font-mono">
+                      {inc.avgLatencyMs > 0
+                        ? `${inc.avgLatencyMs.toFixed(1)}ms`
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="py-2 px-3 text-center text-xs font-mono">
+                      {inc.avgLoss > 0 ? (
+                        <span className={inc.avgLoss > 50 ? "text-red-400" : "text-orange-400"}>{inc.avgLoss.toFixed(1)}%</span>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {inc.resolved ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-green-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                          Resolvido
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-red-400 animate-pulse">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                          Ativo
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────────────────
 
 export default function LinuxMonitor() {
   const { isAdmin } = useLocalAuth();
@@ -1242,6 +1388,18 @@ export default function LinuxMonitor() {
           </Button>
         </div>
       </div>
+
+      <Tabs defaultValue="probes" className="space-y-0">
+        <TabsList className="mb-4">
+          <TabsTrigger value="probes" className="flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5" />Probes
+          </TabsTrigger>
+          <TabsTrigger value="incidents" className="flex items-center gap-1.5">
+            <ClipboardList className="h-3.5 w-3.5" />Incidentes
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="probes" className="space-y-6 mt-0">
 
       {/* Modal Nova Probe */}
       <Dialog open={showAddProbe} onOpenChange={setShowAddProbe}>
@@ -1347,6 +1505,13 @@ export default function LinuxMonitor() {
           onToggleProbe={isAdmin ? (id, active) => toggleProbeMut.mutate({ id, active }) : undefined}
         />
       ))}
+
+        </TabsContent>
+
+        <TabsContent value="incidents" className="mt-0">
+          <IncidentsTab probes={probes ?? []} />
+        </TabsContent>
+      </Tabs>
 
       {/* Global history sheet */}
       <HistorySheet

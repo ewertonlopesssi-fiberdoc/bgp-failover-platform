@@ -599,6 +599,7 @@ export const appRouter = router({
         offlineAlert: z.enum(["never", "1", "2", "3", "5"]).default("never"),
         latencyThreshold: z.number().int().min(0).max(10000).default(0),
         lossThreshold: z.number().int().min(0).max(100).default(0),
+        alertRepeatMinutes: z.number().int().min(1).max(60).default(5),
       }))
       .mutation(async ({ input }) => {
         const dest = await db.createLinuxDestination(input);
@@ -621,6 +622,7 @@ export const appRouter = router({
         offlineAlert: z.enum(["never", "1", "2", "3", "5"]).optional(),
         latencyThreshold: z.number().int().min(0).max(10000).optional(),
         lossThreshold: z.number().int().min(0).max(100).optional(),
+        alertRepeatMinutes: z.number().int().min(1).max(60).optional(),
         active: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
@@ -648,6 +650,17 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await db.clearLinuxDestMetrics(input.destinationId);
         return { success: true };
+      }),
+  }),
+  linuxIncidents: router({
+    list: localAuthProcedure
+      .input(z.object({
+        probeId: z.number().optional(),
+        destinationId: z.number().optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+      }))
+      .query(async ({ input }) => {
+        return db.listLinuxIncidents(input);
       }),
   }),
 });
