@@ -284,3 +284,8 @@
 - [x] Corrigir z-index do painel lateral (fica atrás do mapa Leaflet)
 - [x] Melhorar fluxo de criação de links: selecionar nó de origem e destino visualmente
 - [x] Build e deploy em produção
+
+## Fase 26e — Bug: edição de nó não salva coordenadas
+- [ ] Investigar updateNode no routers.ts — verificar se lat/lng estão sendo passados corretamente
+- [ ] Corrigir o formulário de edição no NetworkMap.tsx — verificar se nodeForm está populado ao abrir edição
+- [ ] Build e deploy em produção

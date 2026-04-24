@@ -34,6 +34,10 @@ queryClient.getMutationCache().subscribe(event => {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Mutation Error]", error);
+    // Show visible toast for FORBIDDEN errors (e.g. non-admin user)
+    if (error instanceof TRPCClientError && (error.data?.code === "FORBIDDEN" || error.data?.httpStatus === 403)) {
+      import("sonner").then(({ toast }) => toast.error("Sem permissão: faça login como administrador"));
+    }
   }
 });
 

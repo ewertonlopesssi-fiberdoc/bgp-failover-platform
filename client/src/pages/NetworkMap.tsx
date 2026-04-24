@@ -236,8 +236,14 @@ export default function NetworkMap() {
   });
 
   // Mutations
-  const createNode = trpc.network.createNode.useMutation({ onSuccess: () => { refetchNodes(); setNodeDialog(false); toast.success("Nó criado com sucesso"); } });
-  const updateNode = trpc.network.updateNode.useMutation({ onSuccess: () => { refetchNodes(); setNodeDialog(false); toast.success("Nó atualizado"); } });
+  const createNode = trpc.network.createNode.useMutation({
+    onSuccess: () => { refetchNodes(); setNodeDialog(false); toast.success("Nó criado com sucesso"); },
+    onError: (err) => { toast.error(`Erro ao criar nó: ${err.message}`); },
+  });
+  const updateNode = trpc.network.updateNode.useMutation({
+    onSuccess: () => { refetchNodes(); setNodeDialog(false); toast.success("Nó atualizado com sucesso"); },
+    onError: (err) => { toast.error(`Erro ao salvar nó: ${err.message}`); },
+  });
   const deleteNode = trpc.network.deleteNode.useMutation({ onSuccess: () => { refetchNodes(); refetchLinks(); toast.success("Nó removido"); } });
   const createLink = trpc.network.createLink.useMutation({ onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link criado com sucesso"); } });
   const updateLink = trpc.network.updateLink.useMutation({ onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link atualizado"); } });
