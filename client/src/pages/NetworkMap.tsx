@@ -437,7 +437,7 @@ export default function NetworkMap() {
     : { lat: -8.89, lng: -36.49 }; // Garanhuns, PE
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col" style={{ height: "calc(100vh - 0px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
         <div className="flex items-center gap-3">
@@ -474,7 +474,7 @@ export default function NetworkMap() {
       </div>
 
       {/* Map */}
-      <div className="flex-1 relative">
+      <div className="relative" style={{ height: "calc(100vh - 130px)" }}>
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
@@ -488,15 +488,17 @@ export default function NetworkMap() {
             </div>
           </div>
         )}
-        <MapView
-          className="w-full h-full"
-          initialCenter={center}
-          initialZoom={10}
-          onMapReady={(map) => {
-            mapRef.current = map;
-            renderMap();
-          }}
-        />
+        <div style={{ width: "100%", height: "100%" }}>
+          <MapView
+            className="w-full h-full"
+            initialCenter={center}
+            initialZoom={10}
+            onMapReady={(map) => {
+              mapRef.current = map;
+              renderMap();
+            }}
+          />
+        </div>
       </div>
 
       {/* ─── Sidebar ─────────────────────────────────────────────────────────── */}
