@@ -585,6 +585,7 @@ export async function upsertInterfaceConfig(data: InsertInterfaceConfig) {
       contractedBps: data.contractedBps,
       alertThreshold: data.alertThreshold,
       alertEnabled: data.alertEnabled,
+      visible: data.visible,
     },
   });
 }

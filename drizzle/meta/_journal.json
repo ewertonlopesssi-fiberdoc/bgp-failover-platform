@@ -57,6 +57,13 @@
       "when": 1777048440999,
       "tag": "0007_breezy_runaways",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1777052461811,
+      "tag": "0008_smart_prodigy",
+      "breakpoints": true
     }
   ]
 }

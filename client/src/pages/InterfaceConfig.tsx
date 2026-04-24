@@ -3,8 +3,9 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
-  Settings, Save, Bell, BellOff, RefreshCw, Info, MapPin, ChevronDown, ChevronRight,
+  Settings, Save, Bell, BellOff, RefreshCw, Info, MapPin, ChevronDown, ChevronRight, Eye, EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +42,7 @@ interface InterfaceRow {
   contractedBps: number;
   alertThreshold: number;
   alertEnabled: boolean;
+  visible: boolean;
   lastAlertAt: Date | null;
 }
 
@@ -60,6 +62,7 @@ function InterfaceRowItem({
   );
   const [threshold, setThreshold] = useState(String(row.alertThreshold));
   const [alertEnabled, setAlertEnabled] = useState(row.alertEnabled);
+  const [visible, setVisible] = useState(row.visible !== false);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -74,6 +77,7 @@ function InterfaceRowItem({
         contractedBps: parseBps(contractedInput),
         alertThreshold: Math.min(100, Math.max(1, parseInt(threshold) || 80)),
         alertEnabled,
+        visible,
       });
       setEditing(false);
     } finally {
@@ -87,11 +91,35 @@ function InterfaceRowItem({
     setContractedInput(row.contractedBps > 0 ? formatBpsDisplay(row.contractedBps).replace(" ", "") : "");
     setThreshold(String(row.alertThreshold));
     setAlertEnabled(row.alertEnabled);
+    setVisible(row.visible !== false);
     setEditing(false);
   };
 
+  // Toggle rápido de visibilidade (sem abrir o modo de edição)
+  const handleQuickToggleVisible = async () => {
+    const newVisible = !(row.visible !== false);
+    setSaving(true);
+    try {
+      await onSave({
+        portId: row.portId,
+        ifName: row.ifName,
+        label: row.label,
+        category: row.category,
+        city: row.city || undefined,
+        contractedBps: row.contractedBps,
+        alertThreshold: row.alertThreshold,
+        alertEnabled: row.alertEnabled,
+        visible: newVisible,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isVisible = row.visible !== false;
+
   return (
-    <tr className={`border-b border-gray-800 hover:bg-gray-800/30 transition-colors ${editing ? "bg-gray-800/50" : ""}`}>
+    <tr className={`border-b border-gray-800 hover:bg-gray-800/30 transition-colors ${editing ? "bg-gray-800/50" : ""} ${!isVisible ? "opacity-50" : ""}`}>
       {/* Interface */}
       <td className="px-3 py-2">
         <div className="flex items-center gap-2">
@@ -202,6 +230,31 @@ function InterfaceRowItem({
         )}
       </td>
 
+      {/* Visível */}
+      <td className="px-3 py-2">
+        {editing ? (
+          <button
+            onClick={() => setVisible(!visible)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all ${visible ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-gray-700 text-gray-400 border border-gray-600"}`}
+          >
+            {visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            {visible ? "Visível" : "Oculto"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={isVisible}
+              onCheckedChange={handleQuickToggleVisible}
+              disabled={saving}
+              className="data-[state=checked]:bg-blue-500 scale-75"
+            />
+            <span className={`text-xs ${isVisible ? "text-blue-400" : "text-gray-500"}`}>
+              {isVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </span>
+          </div>
+        )}
+      </td>
+
       {/* Ações */}
       <td className="px-3 py-2">
         {editing ? (
@@ -263,6 +316,7 @@ function CityGroup({
                 <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Plano Contratado</th>
                 <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Threshold</th>
                 <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Alerta Telegram</th>
+                <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Visível</th>
                 <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Ações</th>
               </tr>
             </thead>
@@ -313,6 +367,7 @@ export default function InterfaceConfigPage() {
   };
 
   const alertCount = (configs || []).filter((c) => c.alertEnabled).length;
+  const hiddenCount = (configs || []).filter((c) => c.visible === false).length;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-4">
@@ -323,13 +378,19 @@ export default function InterfaceConfigPage() {
           <h1 className="text-lg font-bold text-white">Configuração de Interfaces</h1>
         </div>
         <p className="text-gray-400 text-sm">
-          Gerencie nomes, cidades, planos contratados e alertas de saturação por interface.
+          Gerencie nomes, cidades, planos contratados, alertas e visibilidade por interface.
         </p>
         <div className="mt-3 flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800 rounded px-2.5 py-1.5">
             <Bell className="w-3.5 h-3.5 text-emerald-400" />
             <span><span className="text-white font-semibold">{alertCount}</span> interfaces com alerta ativo</span>
           </div>
+          {hiddenCount > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 bg-gray-800 rounded px-2.5 py-1.5">
+              <EyeOff className="w-3.5 h-3.5 text-gray-500" />
+              <span><span className="text-white font-semibold">{hiddenCount}</span> interface{hiddenCount !== 1 ? "s" : ""} oculta{hiddenCount !== 1 ? "s" : ""} da Análise de Tráfego</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-xs text-gray-500 bg-gray-800/50 rounded px-2.5 py-1.5">
             <Info className="w-3.5 h-3.5" />
             <span>Cooldown de 15 min entre alertas repetidos · Alertas via Telegram</span>
@@ -360,6 +421,7 @@ export default function InterfaceConfigPage() {
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Plano Contratado</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Threshold</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Alerta Telegram</th>
+                    <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Visível</th>
                     <th className="px-3 py-2 text-left text-xs text-gray-400 font-medium">Ações</th>
                   </tr>
                 </thead>

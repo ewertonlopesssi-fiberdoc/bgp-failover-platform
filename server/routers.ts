@@ -697,6 +697,7 @@ export const appRouter = router({
         contractedBps: z.number().min(0).default(0),
         alertThreshold: z.number().min(1).max(100).default(80),
         alertEnabled: z.boolean().default(false),
+        visible: z.boolean().default(true),
       }))
       .mutation(async ({ input }) => {
         await db.upsertInterfaceConfig(input);

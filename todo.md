@@ -203,3 +203,10 @@
 ## Fase 18 — Limpeza de interfaces
 - [x] Remover UPLINK-SW-6730 (portId 4), PTP-SW2 (portId 5), UPLINK-CRS317 (portId 39) e ONLINE-NET (portId 117) do TrafficAnalysis.tsx
 - [x] Build e deploy em produção
+
+## Fase 19 — Visibilidade de interfaces
+- [x] Adicionar coluna `visible` (boolean, default true) na tabela interface_configs em produção e dev
+- [x] Atualizar schema Drizzle, helpers db.ts e endpoint upsertInterfaceConfig
+- [x] Adicionar toggle "Visível" na página InterfaceConfig.tsx
+- [x] Filtrar interfaces com visible=false na página TrafficAnalysis.tsx
+- [x] Build e deploy em produção

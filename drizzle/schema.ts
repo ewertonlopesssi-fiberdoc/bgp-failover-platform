@@ -234,6 +234,7 @@ export const interfaceConfigs = mysqlTable("interface_configs", {
   contractedBps: float("contractedBps").default(0).notNull(),  // 0 = use link speed
   alertThreshold: int("alertThreshold").default(80).notNull(), // % of contractedBps (or link speed)
   alertEnabled: boolean("alertEnabled").default(false).notNull(),
+  visible: boolean("visible").default(true).notNull(),
   lastAlertAt: timestamp("lastAlertAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

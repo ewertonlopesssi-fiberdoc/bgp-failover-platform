@@ -483,14 +483,25 @@ export default function TrafficAnalysis() {
   );
 
   // Mesclar labels e cidade do banco com as configurações hardcoded
-  const upstreamInterfaces: InterfaceConfig[] = UPSTREAM_INTERFACES.map((cfg) => {
-    const dbCfg = ifConfigMap.get(cfg.portId);
-    return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
-  });
-  const dedicatedInterfaces: InterfaceConfig[] = DEDICATED_INTERFACES.map((cfg) => {
-    const dbCfg = ifConfigMap.get(cfg.portId);
-    return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
-  });
+  // Filtrar interfaces marcadas como invisíveis (visible === false)
+  const upstreamInterfaces: InterfaceConfig[] = UPSTREAM_INTERFACES
+    .filter((cfg) => {
+      const dbCfg = ifConfigMap.get(cfg.portId);
+      return !dbCfg || dbCfg.visible !== false;
+    })
+    .map((cfg) => {
+      const dbCfg = ifConfigMap.get(cfg.portId);
+      return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
+    });
+  const dedicatedInterfaces: InterfaceConfig[] = DEDICATED_INTERFACES
+    .filter((cfg) => {
+      const dbCfg = ifConfigMap.get(cfg.portId);
+      return !dbCfg || dbCfg.visible !== false;
+    })
+    .map((cfg) => {
+      const dbCfg = ifConfigMap.get(cfg.portId);
+      return dbCfg ? { ...cfg, label: dbCfg.label, city: dbCfg.city ?? undefined } : cfg;
+    });
 
   // Agrupar dedicados por cidade
   const dedicatedByCityMap: Record<string, InterfaceConfig[]> = {};
