@@ -2,6 +2,19 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
+
+// ─── InvalidateSize: forces Leaflet to recalculate tile layout after mount ────
+function InvalidateSize() {
+  const map = useMap();
+  useEffect(() => {
+    // Delay to ensure DOM is fully painted before invalidating
+    const t1 = setTimeout(() => map.invalidateSize(), 100);
+    const t2 = setTimeout(() => map.invalidateSize(), 400);
+    const t3 = setTimeout(() => map.invalidateSize(), 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [map]);
+  return null;
+}
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -358,6 +371,24 @@ export default function NetworkMap() {
       .catch(() => toast.error("Erro ao buscar coordenadas"));
   }
 
+  // ─── Map container height (dynamic, avoids Leaflet tile fragment bug) ────────
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [mapHeight, setMapHeight] = useState("calc(100vh - 130px)");
+  useEffect(() => {
+    function updateHeight() {
+      if (mapContainerRef.current) {
+        const rect = mapContainerRef.current.getBoundingClientRect();
+        const available = window.innerHeight - rect.top;
+        setMapHeight(`${Math.max(available, 400)}px`);
+      }
+    }
+    updateHeight();
+    window.addEventListener("resize", updateHeight);
+    // Also update after a short delay to catch layout shifts
+    const t = setTimeout(updateHeight, 200);
+    return () => { window.removeEventListener("resize", updateHeight); clearTimeout(t); };
+  }, []);
+
   // ─── Derived values ──────────────────────────────────────────────────────────
   const nodesWithCoords = nodes.filter((n) => n.lat && n.lng);
   const defaultCenter: [number, number] = [-8.89, -36.49]; // Garanhuns, PE
@@ -400,7 +431,7 @@ export default function NetworkMap() {
       </div>
 
       {/* Map */}
-      <div className="relative" style={{ height: "calc(100vh - 130px)", minHeight: "400px" }}>
+      <div ref={mapContainerRef} className="relative" style={{ height: mapHeight, minHeight: "400px" }}>
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-[1000] pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
@@ -421,6 +452,7 @@ export default function NetworkMap() {
           style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}
           scrollWheelZoom={true}
         >
+          <InvalidateSize />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
