@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
 import {
   Activity, RefreshCw, ExternalLink, TrendingUp, TrendingDown,
@@ -96,30 +96,50 @@ function formatTime(ts: number, period: Period): string {
   return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// ─── Utilitário de percentil ─────────────────────────────────────────────────
+function percentile(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
 // ─── Modal de gráfico expandido ───────────────────────────────────────────────
 function PortDetailModal({
-  portId, label, color, period, onClose,
+  portId, label, color, period, contractedBps, onClose,
 }: {
-  portId: number; label: string; color: string; period: Period; onClose: () => void;
+  portId: number; label: string; color: string; period: Period; contractedBps: number; onClose: () => void;
 }) {
   const { data, isLoading } = trpc.traffic.getHistory.useQuery(
     { portId, period },
     { refetchInterval: 60000 }
   );
 
+  const history: { ts: number; inBps: number; outBps: number }[] = data?.history || [];
+
   // Determinar a melhor unidade para o eixo Y com base no valor máximo do histórico
-  const allValues = (data?.history || []).flatMap((p: { ts: number; inBps: number; outBps: number }) => [p.inBps, p.outBps]);
-  const maxVal = allValues.length > 0 ? Math.max(...allValues) : 0;
+  const allValues = history.flatMap((p) => [p.inBps, p.outBps]);
+  // Incluir plano contratado no cálculo da escala
+  const maxVal = Math.max(...allValues, contractedBps > 0 ? contractedBps : 0, 0);
   const yUnit = maxVal >= 1e9 ? "Gbps" : maxVal >= 1e6 ? "Mbps" : maxVal >= 1e3 ? "Kbps" : "bps";
   const yDivisor = yUnit === "Gbps" ? 1e9 : yUnit === "Mbps" ? 1e6 : yUnit === "Kbps" ? 1e3 : 1;
 
-  const chartData = (data?.history || []).map((p: { ts: number; inBps: number; outBps: number }) => ({
+  const chartData = history.map((p) => ({
     time: formatTime(p.ts, period),
     [`IN (${yUnit})`]: parseFloat((p.inBps / yDivisor).toFixed(3)),
     [`OUT (${yUnit})`]: parseFloat((p.outBps / yDivisor).toFixed(3)),
   }));
   const inKey = `IN (${yUnit})`;
   const outKey = `OUT (${yUnit})`;
+
+  // Percentil 95
+  const p95In = percentile(history.map((p) => p.inBps), 95);
+  const p95Out = percentile(history.map((p) => p.outBps), 95);
+  const p95InConverted = parseFloat((p95In / yDivisor).toFixed(3));
+  const p95OutConverted = parseFloat((p95Out / yDivisor).toFixed(3));
+
+  // Linha de plano contratado
+  const contractedConverted = contractedBps > 0 ? parseFloat((contractedBps / yDivisor).toFixed(3)) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -134,6 +154,9 @@ function PortDetailModal({
                   IN: <span className="text-emerald-400 font-mono">{formatBps((data.port.ifInOctets_rate || 0) * 8)}</span>
                   {" · "}
                   OUT: <span className="text-blue-400 font-mono">{formatBps((data.port.ifOutOctets_rate || 0) * 8)}</span>
+                  {contractedBps > 0 && (
+                    <span className="ml-2 text-yellow-400/70">· Plano: {formatBps(contractedBps)}</span>
+                  )}
                 </p>
               )}
             </div>
@@ -155,35 +178,100 @@ function PortDetailModal({
               <p className="text-xs text-gray-600">Polling a cada 1 minuto — aguarde alguns ciclos.</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <defs>
-                  <linearGradient id="inGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="time" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-                <YAxis
-                  tickFormatter={(v: number) => `${v} ${yUnit}`}
-                  tick={{ fill: "#9ca3af", fontSize: 10 }}
-                  width={90}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: "8px" }}
-                  labelStyle={{ color: "#f9fafb" }}
-                  formatter={(value: number, name: string) => [`${value} ${yUnit}`, name]}
-                />
-                <Legend wrapperStyle={{ color: "#9ca3af" }} />
-                <Area type="monotone" dataKey={inKey} stroke="#10b981" fill="url(#inGrad)" strokeWidth={2} dot={false} />
-                <Area type="monotone" dataKey={outKey} stroke="#3b82f6" fill="url(#outGrad)" strokeWidth={2} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="inGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="time" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis
+                    tickFormatter={(v: number) => `${v} ${yUnit}`}
+                    tick={{ fill: "#9ca3af", fontSize: 10 }}
+                    width={90}
+                  />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: "8px" }}
+                    labelStyle={{ color: "#f9fafb" }}
+                    formatter={(value: number, name: string) => [`${value} ${yUnit}`, name]}
+                  />
+                  <Legend wrapperStyle={{ color: "#9ca3af" }} />
+                  {/* Linha do plano contratado */}
+                  {contractedConverted !== null && (
+                    <ReferenceLine
+                      y={contractedConverted}
+                      stroke="#facc15"
+                      strokeDasharray="6 3"
+                      strokeWidth={1.5}
+                      label={{ value: `Plano ${formatBps(contractedBps)}`, position: "insideTopRight", fill: "#facc15", fontSize: 10 }}
+                    />
+                  )}
+                  {/* Linhas de P95 */}
+                  {history.length > 0 && (
+                    <>
+                      <ReferenceLine
+                        y={p95InConverted}
+                        stroke="#10b981"
+                        strokeDasharray="4 4"
+                        strokeWidth={1}
+                        strokeOpacity={0.6}
+                        label={{ value: `P95 IN`, position: "insideTopLeft", fill: "#10b981", fontSize: 9 }}
+                      />
+                      <ReferenceLine
+                        y={p95OutConverted}
+                        stroke="#3b82f6"
+                        strokeDasharray="4 4"
+                        strokeWidth={1}
+                        strokeOpacity={0.6}
+                        label={{ value: `P95 OUT`, position: "insideTopRight", fill: "#3b82f6", fontSize: 9 }}
+                      />
+                    </>
+                  )}
+                  <Area type="monotone" dataKey={inKey} stroke="#10b981" fill="url(#inGrad)" strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey={outKey} stroke="#3b82f6" fill="url(#outGrad)" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+
+              {/* Estatísticas de P95 abaixo do gráfico */}
+              {history.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                  <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-3 py-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-gray-400">P95 IN:</span>
+                    <span className="text-emerald-400 font-mono font-semibold">{formatBps(p95In)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-3 py-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500" />
+                    <span className="text-gray-400">P95 OUT:</span>
+                    <span className="text-blue-400 font-mono font-semibold">{formatBps(p95Out)}</span>
+                  </div>
+                  {contractedBps > 0 && (
+                    <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-3 py-1.5">
+                      <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                      <span className="text-gray-400">Utilização P95:</span>
+                      <span className={`font-mono font-semibold ${
+                        Math.max(p95In, p95Out) / contractedBps >= 0.9 ? "text-red-400" :
+                        Math.max(p95In, p95Out) / contractedBps >= 0.7 ? "text-yellow-400" : "text-emerald-400"
+                      }`}>
+                        {((Math.max(p95In, p95Out) / contractedBps) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-3 py-1.5">
+                    <span className="text-gray-400">Amostras:</span>
+                    <span className="text-gray-300 font-mono">{history.length}</span>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -457,7 +545,7 @@ export default function TrafficAnalysis() {
       return "normal";
     }
   });
-  const [selectedPort, setSelectedPort] = useState<{ portId: number; label: string; color: string } | null>(null);
+  const [selectedPort, setSelectedPort] = useState<{ portId: number; label: string; color: string; contractedBps?: number } | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -632,7 +720,7 @@ export default function TrafficAnalysis() {
           interfaces={upstreamInterfaces}
           portMap={portMap}
           viewMode={viewMode}
-          onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
+          onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
         />
         {/* Coluna dedicados — agrupada por cidade */}
         <div className="flex flex-col overflow-hidden">
@@ -655,7 +743,7 @@ export default function TrafficAnalysis() {
                 interfaces={dedicatedByCityMap[city]}
                 portMap={portMap}
                 viewMode={viewMode}
-                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
+                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
               />
             ))}
             {dedicatedNoCity.length > 0 && (
@@ -664,7 +752,7 @@ export default function TrafficAnalysis() {
                 interfaces={dedicatedNoCity}
                 portMap={portMap}
                 viewMode={viewMode}
-                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color })}
+                onSelect={(cfg) => setSelectedPort({ portId: cfg.portId, label: cfg.label, color: cfg.color, contractedBps: ifConfigMap.get(cfg.portId)?.contractedBps ?? 0 })}
               />
             )}
           </div>
@@ -678,6 +766,7 @@ export default function TrafficAnalysis() {
           label={selectedPort.label}
           color={selectedPort.color}
           period={period}
+          contractedBps={selectedPort.contractedBps ?? 0}
           onClose={() => setSelectedPort(null)}
         />
       )}

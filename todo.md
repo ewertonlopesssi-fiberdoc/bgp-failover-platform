@@ -222,3 +222,9 @@
 - [x] Corrigir tooltip do gráfico para exibir valores formatados em Mbps/Gbps
 - [x] Corrigir legenda do gráfico (IN/OUT labels dinâmicos por unidade)
 - [x] Build e deploy em produção
+
+## Fase 22 — Melhorias no gráfico histórico
+- [x] Adicionar linha de referência (ReferenceLine) com o plano contratado no gráfico
+- [x] Adicionar botão de período 30d no seletor de período (já existia)
+- [x] Calcular e exibir percentil 95 de IN e OUT no modal do gráfico
+- [x] Build e deploy em produção
