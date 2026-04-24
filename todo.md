@@ -275,3 +275,7 @@
 - [x] Substituir geocoding do Google Maps pelo Nominatim (OpenStreetMap) na importação LibreNMS
 - [x] Substituir geocoding do Google Maps pelo Nominatim no botão de busca de coordenadas por cidade
 - [x] Build e deploy em produção (45.237.165.251) com Leaflet funcionando
+
+## Fase 26c — Correção do mapa Leaflet (container sem altura)
+- [x] Corrigir MapContainer para ter altura explícita (não depender de flex-1 do pai)
+- [x] Build e deploy em produção
