@@ -387,11 +387,7 @@ export default function NetworkMap() {
 
   // ─── Import from LibreNMS ────────────────────────────────────────────────────
   function importDevice(device: { deviceId: number; name: string; mgmtIp: string; location: string }) {
-    const geocoder = new window.google.maps.Geocoder();
-    const address = device.location || device.name;
-    geocoder.geocode({ address: `${address}, Pernambuco, Brasil` }, (results, status) => {
-      const lat = status === "OK" && results?.[0] ? results[0].geometry.location.lat() : undefined;
-      const lng = status === "OK" && results?.[0] ? results[0].geometry.location.lng() : undefined;
+    const doCreate = (lat?: number, lng?: number) => {
       createNode.mutate({
         name: device.name,
         city: device.location || undefined,
@@ -402,7 +398,19 @@ export default function NetworkMap() {
         deviceId: device.deviceId,
       });
       toast.success(`${device.name} importado${lat ? " com localização" : " (sem coordenadas — edite manualmente)"}`);
-    });
+    };
+    // Tenta geocoding se o Google Maps já estiver carregado, caso contrário importa sem coordenadas
+    if (window.google?.maps?.Geocoder) {
+      const address = device.location || device.name;
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ address: `${address}, Pernambuco, Brasil` }, (results, status) => {
+        const lat = status === "OK" && results?.[0] ? results[0].geometry.location.lat() : undefined;
+        const lng = status === "OK" && results?.[0] ? results[0].geometry.location.lng() : undefined;
+        doCreate(lat, lng);
+      });
+    } else {
+      doCreate();
+    }
   }
 
   // ─── Geocode city for node form ──────────────────────────────────────────────
