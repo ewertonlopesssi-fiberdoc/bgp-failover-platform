@@ -318,3 +318,35 @@ export const clientFailoverState = mysqlTable("client_failover_state", {
   recoveredAt: timestamp("recoveredAt"),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+// Map customers: end-clients shown on the network topology map
+export const mapCustomers = mysqlTable("map_customers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  address: text("address"),              // human-readable address (optional)
+  lat: float("lat"),                     // GPS latitude
+  lng: float("lng"),                     // GPS longitude
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MapCustomer = typeof mapCustomers.$inferSelect;
+export type InsertMapCustomer = typeof mapCustomers.$inferInsert;
+
+// Customer access links: connection from a customer to a network node (switch/router)
+export const customerAccessLinks = mysqlTable("customer_access_links", {
+  id: int("id").autoincrement().primaryKey(),
+  customerId: int("customerId").notNull(),   // references map_customers.id
+  nodeId: int("nodeId").notNull(),           // references network_nodes.id
+  portId: int("portId"),                     // LibreNMS port_id for traffic monitoring
+  portName: varchar("portName", { length: 100 }),
+  linkType: mysqlEnum("linkType", ["fiber", "radio", "copper", "vpn"]).default("fiber").notNull(),
+  capacityBps: float("capacityBps"),
+  useRoadRoute: boolean("useRoadRoute").default(true).notNull(),
+  routePoints: json("routePoints").$type<Array<[number, number]>>(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CustomerAccessLink = typeof customerAccessLinks.$inferSelect;
+export type InsertCustomerAccessLink = typeof customerAccessLinks.$inferInsert;

@@ -53,7 +53,9 @@ import {
   Server,
   Eye,
   EyeOff,
+  Users,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 // ─── RouteEditorLayer: renders draggable waypoints + midpoint handles ─────────
 interface RouteEditorLayerProps {
@@ -158,6 +160,27 @@ L.Icon.Default.mergeOptions({
 // ─── Types ────────────────────────────────────────────────────────────────────
 type NodeType = "router" | "switch" | "olt" | "server" | "pop";
 type LinkType = "fiber" | "radio" | "copper" | "vpn";
+
+interface MapCustomer {
+  id: number;
+  name: string;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  active: boolean;
+}
+interface CustomerAccessLink {
+  id: number;
+  customerId: number;
+  nodeId: number;
+  portId: number | null;
+  portName: string | null;
+  linkType: LinkType;
+  capacityBps: number | null;
+  useRoadRoute: boolean;
+  routePoints: Array<[number, number]> | null;
+  active: boolean;
+}
 
 interface NetworkNode {
   id: number;
@@ -313,6 +336,23 @@ function makeNodeIcon(
 }
 
 // ─── MapFitBounds: adjusts bounds when nodes change ──────────────────────────
+
+// ─── Customer icon (house pin) ──────────────────────────────────────────────
+function makeCustomerIcon(customer: MapCustomer, showLabel: boolean): L.DivIcon {
+  const color = customer.active ? "#f97316" : "#9ca3af";
+  const size = 24;
+  const labelHtml = showLabel
+    ? `<div style="position:absolute;top:${size + 6}px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:700;color:#1e293b;text-shadow:0 0 3px white,0 0 3px white;pointer-events:none;">${customer.name}</div>`
+    : "";
+  return L.divIcon({
+    className: "",
+    iconSize: [size + 8, size + 8 + (showLabel ? 16 : 0)],
+    iconAnchor: [(size + 8) / 2, size + 8],
+    popupAnchor: [0, -(size + 8)],
+    html: `<div style="position:relative;width:${size + 8}px;height:${size + 8 + (showLabel ? 16 : 0)}px;cursor:pointer;"><div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);"><svg width="${size + 8}" height="${size + 8}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/><path d="M16 8 L8 15 L10 15 L10 24 L14 24 L14 19 L18 19 L18 24 L22 24 L22 15 L24 15 Z" fill="white"/></svg></div>${labelHtml}</div>`,
+  });
+}
+
 function MapFitBounds({ nodes }: { nodes: NetworkNode[] }) {
   const map = useMap();
   useEffect(() => {
@@ -389,7 +429,7 @@ async function fetchOsrmRoute(
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function NetworkMap() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<"nodes" | "links">("nodes");
+  const [sidebarTab, setSidebarTab] = useState<"nodes" | "links" | "customers">("nodes");
   const [showLabels, setShowLabels] = useState(true);
 
   // Node dialog
@@ -407,6 +447,28 @@ export default function NetworkMap() {
   // Import dialog
   const [importDialog, setImportDialog] = useState(false);
 
+  // Customer dialog
+  const [customerDialog, setCustomerDialog] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<MapCustomer | null>(null);
+  const [customerForm, setCustomerForm] = useState({ name: "", address: "", lat: "", lng: "", active: true });
+
+  // Customer access link dialog
+  const [customerLinkDialog, setCustomerLinkDialog] = useState(false);
+  const [editingCustomerLink, setEditingCustomerLink] = useState<CustomerAccessLink | null>(null);
+  const [customerLinkForm, setCustomerLinkForm] = useState({
+    customerId: "",
+    nodeId: "",
+    portName: "",
+    linkType: "fiber" as LinkType,
+    capacityBps: "",
+    useRoadRoute: true,
+    active: true,
+  });
+
+  // Customer route editing
+  const [editingCustomerRoute, setEditingCustomerRoute] = useState<{ linkId: number } | null>(null);
+  const [editingCustomerRoutePoints, setEditingCustomerRoutePoints] = useState<[number, number][]>([]);
+
   // Route editing state
   const [editingRouteLink, setEditingRouteLink] = useState<{ linkId: number; segIdx: number } | null>(null);
   const [editingRoutePoints, setEditingRoutePoints] = useState<[number, number][]>([]);
@@ -419,6 +481,8 @@ export default function NetworkMap() {
   // Data
   const { data: nodes = [], refetch: refetchNodes } = trpc.network.listNodes.useQuery();
   const { data: links = [], refetch: refetchLinks } = trpc.network.listLinks.useQuery();
+  const { data: customers = [], refetch: refetchCustomers } = trpc.customers.list.useQuery();
+  const { data: customerLinks = [], refetch: refetchCustomerLinks } = trpc.customers.listLinks.useQuery();
   const { data: libreDevices = [] } = trpc.network.getLibreNMSDevices.useQuery(undefined, {
     enabled: importDialog,
   });
@@ -538,6 +602,94 @@ export default function NetworkMap() {
     onSuccess: () => { refetchLinks(); setEditingRouteLink(null); setEditingRoutePoints([]); toast.success("Traçado salvo com sucesso"); },
     onError: (err) => toast.error(`Erro ao salvar traçado: ${err.message}`),
   });
+
+  // Customer mutations
+  const createCustomer = trpc.customers.create.useMutation({
+    onSuccess: () => { refetchCustomers(); setCustomerDialog(false); toast.success("Cliente criado"); },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+  const updateCustomer = trpc.customers.update.useMutation({
+    onSuccess: () => { refetchCustomers(); setCustomerDialog(false); toast.success("Cliente atualizado"); },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+  const deleteCustomer = trpc.customers.delete.useMutation({
+    onSuccess: () => { refetchCustomers(); refetchCustomerLinks(); toast.success("Cliente removido"); },
+  });
+  const createCustomerLink = trpc.customers.createLink.useMutation({
+    onSuccess: () => { refetchCustomerLinks(); setCustomerLinkDialog(false); toast.success("Link de acesso criado"); },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+  const updateCustomerLink = trpc.customers.updateLink.useMutation({
+    onSuccess: () => { refetchCustomerLinks(); setCustomerLinkDialog(false); toast.success("Link de acesso atualizado"); },
+    onError: (err) => toast.error(`Erro: ${err.message}`),
+  });
+  const deleteCustomerLink = trpc.customers.deleteLink.useMutation({
+    onSuccess: () => { refetchCustomerLinks(); toast.success("Link de acesso removido"); },
+  });
+  const saveCustomerRoute = trpc.customers.updateLink.useMutation({
+    onSuccess: () => { refetchCustomerLinks(); setEditingCustomerRoute(null); setEditingCustomerRoutePoints([]); toast.success("Traçado salvo"); },
+    onError: (err) => toast.error(`Erro ao salvar traçado: ${err.message}`),
+  });
+
+  function openCreateCustomer() {
+    setEditingCustomer(null);
+    setCustomerForm({ name: "", address: "", lat: "", lng: "", active: true });
+    setCustomerDialog(true);
+  }
+  function openEditCustomer(c: MapCustomer) {
+    setEditingCustomer(c);
+    setCustomerForm({ name: c.name, address: c.address ?? "", lat: c.lat?.toString() ?? "", lng: c.lng?.toString() ?? "", active: c.active });
+    setCustomerDialog(true);
+  }
+  function submitCustomer() {
+    const payload = {
+      name: customerForm.name,
+      address: customerForm.address || undefined,
+      lat: customerForm.lat ? parseFloat(customerForm.lat) : undefined,
+      lng: customerForm.lng ? parseFloat(customerForm.lng) : undefined,
+      active: customerForm.active,
+    };
+    if (editingCustomer) updateCustomer.mutate({ id: editingCustomer.id, ...payload });
+    else createCustomer.mutate(payload);
+  }
+
+  function openCreateCustomerLink(customerId?: number) {
+    setEditingCustomerLink(null);
+    setCustomerLinkForm({ customerId: customerId?.toString() ?? "", nodeId: "", portName: "", linkType: "fiber", capacityBps: "", useRoadRoute: true, active: true });
+    setCustomerLinkDialog(true);
+  }
+  function openEditCustomerLink(cl: CustomerAccessLink) {
+    setEditingCustomerLink(cl);
+    setCustomerLinkForm({ customerId: cl.customerId.toString(), nodeId: cl.nodeId.toString(), portName: cl.portName ?? "", linkType: cl.linkType, capacityBps: cl.capacityBps ? (cl.capacityBps / 1e6).toString() : "", useRoadRoute: cl.useRoadRoute, active: cl.active });
+    setCustomerLinkDialog(true);
+  }
+  function submitCustomerLink() {
+    const payload = {
+      customerId: parseInt(customerLinkForm.customerId),
+      nodeId: parseInt(customerLinkForm.nodeId),
+      portName: customerLinkForm.portName || undefined,
+      linkType: customerLinkForm.linkType,
+      capacityBps: customerLinkForm.capacityBps ? parseFloat(customerLinkForm.capacityBps) * 1e6 : undefined,
+      useRoadRoute: customerLinkForm.useRoadRoute,
+      active: customerLinkForm.active,
+    };
+    if (editingCustomerLink) updateCustomerLink.mutate({ id: editingCustomerLink.id, ...payload });
+    else createCustomerLink.mutate(payload);
+  }
+
+  function startCustomerRouteEdit(linkId: number, points: [number, number][]) {
+    setHoveredLinkId(null);
+    setEditingCustomerRoute({ linkId });
+    setEditingCustomerRoutePoints(points.length >= 2 ? [...points] : [...points]);
+  }
+  function cancelCustomerRouteEdit() {
+    setEditingCustomerRoute(null);
+    setEditingCustomerRoutePoints([]);
+  }
+  function confirmCustomerRouteEdit() {
+    if (!editingCustomerRoute) return;
+    saveCustomerRoute.mutate({ id: editingCustomerRoute.linkId, routePoints: editingCustomerRoutePoints });
+  }
 
   function startRouteEdit(linkId: number, segIdx: number, points: [number, number][]) {
     // Disable hover box while editing
@@ -882,6 +1034,46 @@ export default function NetworkMap() {
             </button>
           </div>
         )}
+
+        {/* ─── Customer route editing overlay ─── */}
+        {editingCustomerRoute && (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 2000,
+              background: "#1e293b",
+              borderRadius: 8,
+              padding: "8px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+              color: "white",
+              pointerEvents: "auto",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ marginRight: 4, color: "#fb923c" }}>✏️ Editando traçado do cliente</span>
+            <span style={{ color: "#94a3b8", fontSize: 11 }}>Arraste os pontos • Clique nos cinzas para adicionar • Clique direito para remover</span>
+            <button
+              onClick={confirmCustomerRouteEdit}
+              disabled={saveCustomerRoute.isPending}
+              style={{ marginLeft: 12, background: "#f97316", color: "white", border: "none", borderRadius: 5, padding: "5px 14px", cursor: "pointer", fontWeight: 600, fontSize: 13, opacity: saveCustomerRoute.isPending ? 0.6 : 1 }}
+            >
+              {saveCustomerRoute.isPending ? "Salvando..." : "✔ Salvar"}
+            </button>
+            <button
+              onClick={cancelCustomerRouteEdit}
+              style={{ background: "transparent", color: "#94a3b8", border: "1px solid #334155", borderRadius: 5, padding: "5px 12px", cursor: "pointer", fontSize: 13 }}
+            >
+              ✕ Cancelar
+            </button>
+          </div>
+        )}
+
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-[1000] pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
@@ -1009,6 +1201,63 @@ export default function NetworkMap() {
               onChange={setEditingRoutePoints}
             />
           )}
+
+          {/* ─── Customer access links (polylines) ─── */}
+          {customerLinks.filter(cl => cl.active).map((cl) => {
+            const customer = customers.find(c => c.id === cl.customerId);
+            const node = nodes.find(n => n.id === cl.nodeId);
+            if (!customer?.lat || !customer?.lng || !node?.lat || !node?.lng) return null;
+            const isEditingThis = editingCustomerRoute?.linkId === cl.id;
+            const rawPts = cl.routePoints ?? [];
+            const safePts = rawPts.filter((pt): pt is [number, number] =>
+              Array.isArray(pt) && pt.length === 2 && pt[0] != null && pt[1] != null &&
+              typeof pt[0] === 'number' && typeof pt[1] === 'number' && isFinite(pt[0]) && isFinite(pt[1])
+            );
+            const positions: [number, number][] = safePts.length > 1
+              ? safePts
+              : [[customer.lat, customer.lng], [node.lat!, node.lng!]];
+            return (
+              <Polyline
+                key={`cal-${cl.id}`}
+                positions={positions}
+                pathOptions={{ color: isEditingThis ? "#facc15" : "#f97316", weight: 2, opacity: 0.85, dashArray: "5 4" }}
+                eventHandlers={{
+                  dblclick() {
+                    startCustomerRouteEdit(cl.id, positions);
+                  },
+                }}
+              />
+            );
+          })}
+
+          {/* ─── Customer route editor ─── */}
+          {editingCustomerRoute && editingCustomerRoutePoints.length >= 2 && (
+            <RouteEditorLayer
+              points={editingCustomerRoutePoints}
+              onChange={setEditingCustomerRoutePoints}
+            />
+          )}
+
+          {/* ─── Customer markers ─── */}
+          {customers.filter(c => c.lat && c.lng).map((customer) => (
+            <Marker
+              key={`cust-${customer.id}-${showLabels}`}
+              position={[customer.lat!, customer.lng!]}
+              icon={makeCustomerIcon(customer as MapCustomer, showLabels)}
+              draggable={true}
+              eventHandlers={{
+                dragend(e) {
+                  const latlng = (e.target as L.Marker).getLatLng();
+                  updateCustomer.mutate({ id: customer.id, lat: latlng.lat, lng: latlng.lng },
+                    { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
+                  );
+                },
+                click() {
+                  openEditCustomer(customer as MapCustomer);
+                },
+              }}
+            />
+          ))}
 
           {/* Draw nodes (circular markers) */}
           {nodesWithCoords.map((node) => {
@@ -1185,13 +1434,16 @@ export default function NetworkMap() {
               <Network className="w-4 h-4" /> Gerenciar Topologia
             </SheetTitle>
           </SheetHeader>
-          <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as "nodes" | "links")} className="mt-4">
+          <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as "nodes" | "links" | "customers")} className="mt-4">
             <TabsList className="w-full">
               <TabsTrigger value="nodes" className="flex-1">
-                <Server className="w-4 h-4 mr-1" /> Nós ({nodes.length})
+                <Server className="w-3 h-3 mr-1" /> Nós ({nodes.length})
               </TabsTrigger>
               <TabsTrigger value="links" className="flex-1">
-                <Link2 className="w-4 h-4 mr-1" /> Links ({links.length})
+                <Link2 className="w-3 h-3 mr-1" /> Links ({links.length})
+              </TabsTrigger>
+              <TabsTrigger value="customers" className="flex-1">
+                <Users className="w-3 h-3 mr-1" /> Clientes ({customers.length})
               </TabsTrigger>
             </TabsList>
 
@@ -1272,6 +1524,78 @@ export default function NetworkMap() {
                     }}>
                       <Trash2 className="w-3 h-3" />
                     </Button>
+                  </div>
+                );
+              })}
+            </TabsContent>
+
+            {/* Customers tab */}
+            <TabsContent value="customers" className="mt-4 space-y-2">
+              <div className="flex gap-2">
+                <Button size="sm" className="flex-1" onClick={openCreateCustomer}>
+                  <Plus className="w-4 h-4 mr-1" /> Adicionar Cliente
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => openCreateCustomerLink()}>
+                  <Link2 className="w-4 h-4 mr-1" /> Novo Link
+                </Button>
+              </div>
+              {customers.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum cliente cadastrado</p>
+              )}
+              {customers.map((customer) => {
+                const cLinks = customerLinks.filter(cl => cl.customerId === customer.id);
+                return (
+                  <div key={customer.id} className="p-3 rounded-lg border border-border bg-card/50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🏠</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{customer.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {customer.address && <span>{customer.address} · </span>}
+                          {customer.lat && customer.lng ? (
+                            <span className="text-green-500">📍 {customer.lat.toFixed(4)}, {customer.lng.toFixed(4)}</span>
+                          ) : (
+                            <span className="text-amber-500">⚠ Sem coordenadas</span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge variant={customer.active ? "default" : "secondary"} className="text-xs">
+                        {customer.active ? "Ativo" : "Inativo"}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCustomer(customer as MapCustomer)}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openCreateCustomerLink(customer.id)}>
+                        <Link2 className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => {
+                        if (confirm(`Remover "${customer.name}" e todos os links de acesso?`)) deleteCustomer.mutate({ id: customer.id });
+                      }}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                    {cLinks.length > 0 && (
+                      <div className="mt-2 pl-2 space-y-1 border-l-2 border-orange-200">
+                        {cLinks.map(cl => {
+                          const node = nodes.find(n => n.id === cl.nodeId);
+                          return (
+                            <div key={cl.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <span className="text-orange-500">→</span>
+                              <span className="flex-1 truncate">{node?.name ?? `Nó ${cl.nodeId}`}{cl.portName && ` (${cl.portName})`}</span>
+                              <span>{cl.linkType}</span>
+                              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => openEditCustomerLink(cl as CustomerAccessLink)}>
+                                <Pencil className="w-2.5 h-2.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={() => {
+                                if (confirm("Remover link de acesso?")) deleteCustomerLink.mutate({ id: cl.id });
+                              }}>
+                                <Trash2 className="w-2.5 h-2.5" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1608,6 +1932,122 @@ export default function NetworkMap() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportDialog(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Customer Dialog ────────────────────────────────────────────────────────────────────────────────── */}
+      <Dialog open={customerDialog} onOpenChange={setCustomerDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingCustomer ? "Editar Cliente" : "Adicionar Cliente"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Nome *</Label>
+              <Input value={customerForm.name} onChange={(e) => setCustomerForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Empresa XYZ" />
+            </div>
+            <div>
+              <Label>Endereço</Label>
+              <Input value={customerForm.address} onChange={(e) => setCustomerForm(f => ({ ...f, address: e.target.value }))} placeholder="Ex: Rua das Flores, 123, Garanhuns" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Latitude</Label>
+                <Input value={customerForm.lat} onChange={(e) => setCustomerForm(f => ({ ...f, lat: e.target.value }))} placeholder="Ex: -8.8897" type="number" step="any" />
+              </div>
+              <div>
+                <Label>Longitude</Label>
+                <Input value={customerForm.lng} onChange={(e) => setCustomerForm(f => ({ ...f, lng: e.target.value }))} placeholder="Ex: -36.4965" type="number" step="any" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={customerForm.active}
+                onCheckedChange={(v) => setCustomerForm(f => ({ ...f, active: v }))}
+              />
+              <Label>Ativo</Label>
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setCustomerDialog(false)}>Cancelar</Button>
+            <Button onClick={submitCustomer} disabled={!customerForm.name || createCustomer.isPending || updateCustomer.isPending}>
+              {editingCustomer ? "Salvar" : "Criar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Customer Access Link Dialog ────────────────────────────────────────────────────────────────────────────────── */}
+      <Dialog open={customerLinkDialog} onOpenChange={setCustomerLinkDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingCustomerLink ? "Editar Link de Acesso" : "Novo Link de Acesso"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Cliente *</Label>
+              <Select value={customerLinkForm.customerId} onValueChange={(v) => setCustomerLinkForm(f => ({ ...f, customerId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione o cliente..." /></SelectTrigger>
+                <SelectContent>
+                  {customers.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Switch / Roteador *</Label>
+              <Select value={customerLinkForm.nodeId} onValueChange={(v) => setCustomerLinkForm(f => ({ ...f, nodeId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione o nó..." /></SelectTrigger>
+                <SelectContent>
+                  {nodes.map(n => <SelectItem key={n.id} value={n.id.toString()}>{n.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Porta (opcional)</Label>
+              <Input value={customerLinkForm.portName} onChange={(e) => setCustomerLinkForm(f => ({ ...f, portName: e.target.value }))} placeholder="Ex: GE0/0/1" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tipo de Link</Label>
+                <Select value={customerLinkForm.linkType} onValueChange={(v) => setCustomerLinkForm(f => ({ ...f, linkType: v as LinkType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fiber">Fibra Óptica</SelectItem>
+                    <SelectItem value="radio">Rádio</SelectItem>
+                    <SelectItem value="copper">Cobre</SelectItem>
+                    <SelectItem value="vpn">VPN</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Capacidade (Mbps)</Label>
+                <Input value={customerLinkForm.capacityBps} onChange={(e) => setCustomerLinkForm(f => ({ ...f, capacityBps: e.target.value }))} placeholder="Ex: 100" type="number" min="0" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border p-3">
+              <div>
+                <div className="text-sm font-medium">Rota por estradas</div>
+                <div className="text-xs text-muted-foreground">Traçar via OSRM</div>
+              </div>
+              <Switch
+                checked={customerLinkForm.useRoadRoute}
+                onCheckedChange={(v) => setCustomerLinkForm(f => ({ ...f, useRoadRoute: v }))}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={customerLinkForm.active}
+                onCheckedChange={(v) => setCustomerLinkForm(f => ({ ...f, active: v }))}
+              />
+              <Label>Ativo</Label>
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setCustomerLinkDialog(false)}>Cancelar</Button>
+            <Button onClick={submitCustomerLink} disabled={!customerLinkForm.customerId || !customerLinkForm.nodeId || createCustomerLink.isPending || updateCustomerLink.isPending}>
+              {editingCustomerLink ? "Salvar" : "Criar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

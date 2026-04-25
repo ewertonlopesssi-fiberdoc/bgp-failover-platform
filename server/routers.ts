@@ -1284,8 +1284,93 @@ export const appRouter = router({
         }
       }),
   }),
+
+  // ─── Map Customers ──────────────────────────────────────────────────────────────────────────────────
+  customers: router({
+    list: localAuthProcedure.query(async () => {
+      return db.listMapCustomers();
+    }),
+
+    create: localAuthProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        address: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return db.createMapCustomer(input);
+      }),
+
+    update: localAuthProcedure
+      .input(z.object({
+        id: z.number(),
+        name: z.string().min(1).optional(),
+        address: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateMapCustomer(id, data);
+      }),
+
+    delete: localAuthProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return db.deleteMapCustomer(input.id);
+      }),
+
+    // ─── Customer Access Links ─────────────────────────────────────────────────────────────────
+    listLinks: localAuthProcedure.query(async () => {
+      return db.listCustomerAccessLinks();
+    }),
+
+    createLink: localAuthProcedure
+      .input(z.object({
+        customerId: z.number(),
+        nodeId: z.number(),
+        portId: z.number().optional(),
+        portName: z.string().optional(),
+        linkType: z.enum(["fiber", "radio", "copper", "vpn"]).optional(),
+        capacityBps: z.number().optional(),
+        useRoadRoute: z.boolean().optional(),
+        routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        return db.createCustomerAccessLink(input);
+      }),
+
+    updateLink: localAuthProcedure
+      .input(z.object({
+        id: z.number(),
+        customerId: z.number().optional(),
+        nodeId: z.number().optional(),
+        portId: z.number().optional(),
+        portName: z.string().optional(),
+        linkType: z.enum(["fiber", "radio", "copper", "vpn"]).optional(),
+        capacityBps: z.number().optional(),
+        useRoadRoute: z.boolean().optional(),
+        routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
+        active: z.boolean().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        return db.updateCustomerAccessLink(id, data);
+      }),
+
+    deleteLink: localAuthProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        return db.deleteCustomerAccessLink(input.id);
+      }),
+  }),
 });
 export type AppRouter = typeof appRouter;
+
 
 // Helper para formatar bps em alertas Telegram
 function formatBpsAlert(bps: number): string {

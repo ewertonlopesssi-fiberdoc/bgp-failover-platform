@@ -14,6 +14,8 @@ import {
   networkNodes, InsertNetworkNode,
   networkLinks, InsertNetworkLink,
   networkLinkSegments, InsertNetworkLinkSegment,
+  mapCustomers, InsertMapCustomer,
+  customerAccessLinks, InsertCustomerAccessLink,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -736,4 +738,57 @@ export async function replaceNetworkLinkSegments(linkId: number, segments: Omit<
   if (segments.length > 0) {
     await db.insert(networkLinkSegments).values(segments.map(s => ({ ...s, linkId })));
   }
+}
+
+// ─── Map Customers ─────────────────────────────────────────────────────────────
+export async function listMapCustomers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(mapCustomers).orderBy(mapCustomers.name);
+}
+
+export async function createMapCustomer(data: Omit<InsertMapCustomer, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(mapCustomers).values(data);
+  return result;
+}
+
+export async function updateMapCustomer(id: number, data: Partial<Omit<InsertMapCustomer, "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(mapCustomers).set(data).where(eq(mapCustomers.id, id));
+}
+
+export async function deleteMapCustomer(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(customerAccessLinks).where(eq(customerAccessLinks.customerId, id));
+  await db.delete(mapCustomers).where(eq(mapCustomers.id, id));
+}
+
+// ─── Customer Access Links ─────────────────────────────────────────────────────
+export async function listCustomerAccessLinks() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(customerAccessLinks).orderBy(customerAccessLinks.id);
+}
+
+export async function createCustomerAccessLink(data: Omit<InsertCustomerAccessLink, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(customerAccessLinks).values(data);
+  return result;
+}
+
+export async function updateCustomerAccessLink(id: number, data: Partial<Omit<InsertCustomerAccessLink, "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(customerAccessLinks).set(data).where(eq(customerAccessLinks.id, id));
+}
+
+export async function deleteCustomerAccessLink(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(customerAccessLinks).where(eq(customerAccessLinks.id, id));
 }

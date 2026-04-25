@@ -356,3 +356,12 @@
 - [x] Build e deploy em produção
 - [x] Porta por destino: cada destino no formulário de link deve ter seleção de porta própria (porta do nó destino), salva em network_link_segments.toPortId/toPortName; hover box deve mostrar DOM/tráfego da porta do segmento correto
 - [x] Edição interativa do traçado: duplo clique na linha entra em modo de edição com pontos arrastáveis, botão Salvar persiste os novos routePoints no banco
+- [ ] Clientes no mapa: tabela map_customers (id, name, address, lat, lng, active, createdAt)
+- [ ] Links de acesso: tabela customer_access_links (id, customerId, nodeId, portName, linkType, capacityBps, routePoints, active, createdAt)
+- [ ] tRPC procedures: listCustomers, createCustomer, updateCustomer, deleteCustomer
+- [ ] tRPC procedures: listCustomerLinks, createCustomerLink, updateCustomerLink, deleteCustomerLink
+- [ ] UI: ícone de cliente (casa/usuário) diferenciado no mapa, arrastável para reposicionar
+- [ ] UI: painel lateral de clientes com CRUD (nome, endereço, coordenadas)
+- [ ] UI: formulário de link cliente→switch com seleção de nó destino e porta
+- [ ] UI: edição interativa do traçado do link de acesso (mesmo sistema dos links de rede)
+- [ ] UI: hover box no link de acesso mostrando cliente, nó, porta e tráfego
