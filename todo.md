@@ -331,3 +331,10 @@
 - [x] Corrigir TypeError: routePoints nulos/mal formatados causando crash no Leaflet Polyline
 - [x] Garantir fallback para linha reta quando OSRM falha ou retorna vazio
 - [x] Build e deploy em produção
+
+## Fase 32 — Tráfego em tempo real: campos corretos LibreNMS + refresh automático
+- [x] Investigar resposta real da API LibreNMS /ports/{id} e mapear campos corretos de tráfego
+- [x] Corrigir getPortTraffic para usar campos corretos (ifInOctets_rate, ifOutOctets_rate, etc.)
+- [x] Adicionar refresh automático a cada 5s na caixa de hover do link
+- [x] Testar com porta 40GE0/0/2 e verificar TX/RX em tempo real
+- [x] Build e deploy em produção

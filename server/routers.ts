@@ -1056,8 +1056,10 @@ export const appRouter = router({
             `${LIBRENMS_URL}/api/v0/ports/${input.portId}`,
             { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
           );
-          const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifAdminStatus?: string; ifSpeed?: number; ifAlias?: string; ifName?: string } };
-          const p = data.port;
+          const data = await resp.json() as { port?: Array<{ ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifAdminStatus?: string; ifSpeed?: number; ifAlias?: string; ifName?: string }> | { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifAdminStatus?: string; ifSpeed?: number; ifAlias?: string; ifName?: string } };
+          // LibreNMS returns port as array or object depending on version
+          const rawPort = data.port;
+          const p = Array.isArray(rawPort) ? rawPort[0] : rawPort;
           if (!p) return null;
           return {
             inBps: (p.ifInOctets_rate ?? 0) * 8,
@@ -1095,8 +1097,9 @@ export const appRouter = router({
                 `${LIBRENMS_URL}/api/v0/ports/${portId}`,
                 { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
               );
-              const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifSpeed?: number } };
-              const p = data.port;
+              const data = await resp.json() as { port?: Array<{ ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifSpeed?: number }> | { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifSpeed?: number } };
+              const rawPort2 = data.port;
+              const p = Array.isArray(rawPort2) ? rawPort2[0] : rawPort2;
               if (p) {
                 results[portId] = {
                   inBps: (p.ifInOctets_rate ?? 0) * 8,
@@ -1166,8 +1169,9 @@ export const appRouter = router({
             `${LIBRENMS_URL}/api/v0/port/${input.portId}`,
             { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
           );
-          const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifSpeed?: number; ifOperStatus?: string } };
-          const port = data.port;
+          const data = await resp.json() as { port?: Array<{ ifInOctets_rate?: number; ifOutOctets_rate?: number; ifSpeed?: number; ifOperStatus?: string }> | { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifSpeed?: number; ifOperStatus?: string } };
+          const rawLinkPort = data.port;
+          const port = Array.isArray(rawLinkPort) ? rawLinkPort[0] : rawLinkPort;
           if (!port) return null;
           const inBps = (port.ifInOctets_rate || 0) * 8;
           const outBps = (port.ifOutOctets_rate || 0) * 8;

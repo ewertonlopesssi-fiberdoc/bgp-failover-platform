@@ -330,15 +330,15 @@ export default function NetworkMap() {
   }, [links]);
   const { data: linksTrafficData } = trpc.network.getLinksTraffic.useQuery(
     { portIds: allLinkPortIds },
-    { enabled: allLinkPortIds.length > 0, refetchInterval: 30000 }
+    { enabled: allLinkPortIds.length > 0, refetchInterval: 10000 }
   );
 
   // Traffic query for hovered link — only fromPortId (port of origin device)
   const hoveredLink = links.find((l) => l.id === hoveredLinkId);
   const hoveredFromPortId = hoveredLink?.fromPortId ?? null;
-  const { data: fromPortTraffic, isLoading: trafficLoading } = trpc.network.getPortTraffic.useQuery(
+  const { data: fromPortTraffic, isLoading: trafficLoading, isFetching: trafficFetching } = trpc.network.getPortTraffic.useQuery(
     { portId: hoveredFromPortId! },
-    { enabled: !!hoveredFromPortId, refetchInterval: 10000 }
+    { enabled: !!hoveredFromPortId, refetchInterval: 5000 }
   );
 
   // Per-node utilization (max of all links from that node)
@@ -769,10 +769,13 @@ export default function NetworkMap() {
               }}
             >
               {/* Port name header */}
-              <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 6, borderBottom: "1px solid #e5e7eb", paddingBottom: 4 }}>
-                {hoveredLink.fromPortName
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 6, borderBottom: "1px solid #e5e7eb", paddingBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>{hoveredLink.fromPortName
                   ? `[ ${hoveredLink.fromPortName} ]`
-                  : `${fromN?.name ?? "?"} → ${toN?.name ?? "?"}`}
+                  : `${fromN?.name ?? "?"} \u2192 ${toN?.name ?? "?"}`}</span>
+                {trafficFetching && !trafficLoading && (
+                  <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 400, marginLeft: 8 }}>\u21bb</span>
+                )}
               </div>
 
               {hoveredLink.fromPortId ? (
