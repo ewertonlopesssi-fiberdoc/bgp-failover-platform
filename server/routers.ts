@@ -1251,6 +1251,38 @@ export const appRouter = router({
           return null;
         }
       }),
+    // Get DOM optical signal (dBm + temperature) for a port by ifName and device_id
+    getPortDOM: localAuthProcedure
+      .input(z.object({ ifName: z.string(), deviceId: z.number() }))
+      .query(async ({ input }) => {
+        try {
+          const mysql2 = await import('mysql2/promise');
+          const conn = await mysql2.createConnection({
+            host: '127.0.0.1',
+            port: 3306,
+            user: 'librenms',
+            password: 'librenms_pass_2024',
+            database: 'librenms',
+          });
+          const [rows] = await conn.execute(
+            `SELECT sensor_class, sensor_descr, sensor_current
+             FROM sensors
+             WHERE sensor_class IN ('dbm','temperature')
+               AND sensor_deleted = 0
+               AND device_id = ?
+               AND sensor_descr LIKE ?
+             ORDER BY sensor_class, sensor_descr`,
+            [input.deviceId, `${input.ifName}%`]
+          ) as [Array<{ sensor_class: string; sensor_descr: string; sensor_current: number | null }>, unknown];
+          await conn.end();
+          const rxDbm = rows.find(r => r.sensor_class === 'dbm' && r.sensor_descr.toLowerCase().includes('rx'))?.sensor_current ?? null;
+          const txDbm = rows.find(r => r.sensor_class === 'dbm' && r.sensor_descr.toLowerCase().includes('tx'))?.sensor_current ?? null;
+          const tempC = rows.find(r => r.sensor_class === 'temperature')?.sensor_current ?? null;
+          return { rxDbm, txDbm, tempC };
+        } catch {
+          return null;
+        }
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

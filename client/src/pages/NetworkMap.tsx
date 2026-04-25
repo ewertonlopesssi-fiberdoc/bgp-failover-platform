@@ -355,9 +355,17 @@ export default function NetworkMap() {
   // Traffic query for hovered link — only fromPortId (port of origin device)
   const hoveredLink = links.find((l) => l.id === hoveredLinkId);
   const hoveredFromPortId = hoveredLink?.fromPortId ?? null;
+  const hoveredFromNode = hoveredLink ? nodes.find((n) => n.id === hoveredLink.fromNodeId) : null;
   const { data: fromPortTraffic, isLoading: trafficLoading, isFetching: trafficFetching } = trpc.network.getPortTraffic.useQuery(
     { portId: hoveredFromPortId! },
     { enabled: !!hoveredFromPortId, refetchInterval: 5000 }
+  );
+  // DOM optical signal query (dBm + temperature) for hovered link's source port
+  const hoveredFromPortName = hoveredLink?.fromPortName ?? null;
+  const hoveredFromDeviceId = hoveredFromNode?.deviceId ?? null;
+  const { data: portDOM } = trpc.network.getPortDOM.useQuery(
+    { ifName: hoveredFromPortName!, deviceId: hoveredFromDeviceId! },
+    { enabled: !!hoveredFromPortName && !!hoveredFromDeviceId, refetchInterval: 30000 }
   );
 
   // Per-node utilization (max of all links from that node)
@@ -862,6 +870,30 @@ export default function NetworkMap() {
                       <>
                         <span style={{ color: "#6b7280", fontSize: 12 }}>Cap.:</span>
                         <span style={{ color: "#374151" }}>{formatBps(capBps)}</span>
+                      </>
+                    )}
+                    {portDOM && portDOM.rxDbm !== null && (
+                      <>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Rx dBm:</span>
+                        <span style={{ fontWeight: 600, color: portDOM.rxDbm < -30 ? "#ef4444" : portDOM.rxDbm < -20 ? "#f59e0b" : "#22c55e" }}>
+                          {portDOM.rxDbm.toFixed(2)} dBm
+                        </span>
+                      </>
+                    )}
+                    {portDOM && portDOM.txDbm !== null && (
+                      <>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Tx dBm:</span>
+                        <span style={{ fontWeight: 600, color: portDOM.txDbm < -30 ? "#ef4444" : portDOM.txDbm < -20 ? "#f59e0b" : "#22c55e" }}>
+                          {portDOM.txDbm.toFixed(2)} dBm
+                        </span>
+                      </>
+                    )}
+                    {portDOM && portDOM.tempC !== null && (
+                      <>
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Temp.:</span>
+                        <span style={{ fontWeight: 600, color: portDOM.tempC > 70 ? "#ef4444" : portDOM.tempC > 50 ? "#f59e0b" : "#374151" }}>
+                          {portDOM.tempC.toFixed(0)} °C
+                        </span>
                       </>
                     )}
                   </div>

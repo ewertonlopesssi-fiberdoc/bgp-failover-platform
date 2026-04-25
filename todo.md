@@ -348,3 +348,9 @@
 - [x] Adicionar sinal da porta (ifOperStatus com indicador colorido) na caixa de hover
 - [x] Adicionar ifAlias (descrição da porta) na caixa de hover
 - [x] Build e deploy em produção
+
+## Fase 34 — Sinal óptico DOM (dBm + temperatura) na caixa de hover
+- [x] Investigar tabela sensors do LibreNMS e mapear campos (sensor_class=dbm, sensor_class=temperature)
+- [x] Criar endpoint tRPC getPortDOM que busca dBm e temperatura por ifName/device_id no banco MySQL do LibreNMS
+- [x] Adicionar Rx dBm, Tx dBm e temperatura na caixa de hover do link (coloridos por faixa)
+- [x] Build e deploy em produção
