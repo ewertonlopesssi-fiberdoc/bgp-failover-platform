@@ -355,3 +355,4 @@
 - [x] Adicionar Rx dBm, Tx dBm e temperatura na caixa de hover do link (coloridos por faixa)
 - [x] Build e deploy em produção
 - [x] Porta por destino: cada destino no formulário de link deve ter seleção de porta própria (porta do nó destino), salva em network_link_segments.toPortId/toPortName; hover box deve mostrar DOM/tráfego da porta do segmento correto
+- [x] Edição interativa do traçado: duplo clique na linha entra em modo de edição com pontos arrastáveis, botão Salvar persiste os novos routePoints no banco

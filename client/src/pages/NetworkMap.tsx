@@ -55,6 +55,97 @@ import {
   EyeOff,
 } from "lucide-react";
 
+// ─── RouteEditorLayer: renders draggable waypoints + midpoint handles ─────────
+interface RouteEditorLayerProps {
+  points: [number, number][];
+  onChange: (pts: [number, number][]) => void;
+}
+function RouteEditorLayer({ points, onChange }: RouteEditorLayerProps) {
+  const map = useMap();
+
+  // Draggable waypoint markers (blue circles)
+  const waypointIcon = useMemo(() => L.divIcon({
+    className: "",
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);cursor:grab"></div>`,
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  }), []);
+
+  // Midpoint handles (smaller grey circles to insert new points)
+  const midIcon = useMemo(() => L.divIcon({
+    className: "",
+    html: `<div style="width:10px;height:10px;border-radius:50%;background:#94a3b8;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.3);cursor:pointer;opacity:0.8"></div>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  }), []);
+
+  // Disable map drag while editing so dragging points doesn't pan the map
+  useEffect(() => {
+    map.dragging.disable();
+    return () => { map.dragging.enable(); };
+  }, [map]);
+
+  // Midpoints between consecutive waypoints
+  const midpoints: [number, number][] = useMemo(() => {
+    const mids: [number, number][] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      mids.push([(points[i][0] + points[i + 1][0]) / 2, (points[i][1] + points[i + 1][1]) / 2]);
+    }
+    return mids;
+  }, [points]);
+
+  return (
+    <>
+      {/* Preview polyline */}
+      <Polyline
+        positions={points}
+        pathOptions={{ color: "#3b82f6", weight: 3, dashArray: "6 4", opacity: 0.9 }}
+      />
+      {/* Waypoint markers */}
+      {points.map((pt, idx) => (
+        <Marker
+          key={`wp-${idx}`}
+          position={pt}
+          icon={waypointIcon}
+          draggable={true}
+          eventHandlers={{
+            drag(e) {
+              const latlng = (e.target as L.Marker).getLatLng();
+              const newPts = [...points] as [number, number][];
+              newPts[idx] = [latlng.lat, latlng.lng];
+              onChange(newPts);
+            },
+            contextmenu() {
+              // Right-click to remove a waypoint (keep at least 2)
+              if (points.length <= 2) return;
+              const newPts = points.filter((_, i) => i !== idx);
+              onChange(newPts);
+            },
+          }}
+        />
+      ))}
+      {/* Midpoint handles to insert new waypoints */}
+      {midpoints.map((mid, idx) => (
+        <Marker
+          key={`mid-${idx}`}
+          position={mid}
+          icon={midIcon}
+          eventHandlers={{
+            click() {
+              const newPts = [
+                ...points.slice(0, idx + 1),
+                mid,
+                ...points.slice(idx + 1),
+              ] as [number, number][];
+              onChange(newPts);
+            },
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
 // ─── Fix Leaflet default icon URLs (broken with Vite/webpack) ─────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -316,6 +407,10 @@ export default function NetworkMap() {
   // Import dialog
   const [importDialog, setImportDialog] = useState(false);
 
+  // Route editing state
+  const [editingRouteLink, setEditingRouteLink] = useState<{ linkId: number; segIdx: number } | null>(null);
+  const [editingRoutePoints, setEditingRoutePoints] = useState<[number, number][]>([]);
+
   // Hover state for link traffic box
   const [hoveredLinkId, setHoveredLinkId] = useState<number | null>(null);
   const [hoveredSegmentIdx, setHoveredSegmentIdx] = useState<number>(0);
@@ -439,6 +534,43 @@ export default function NetworkMap() {
     onError: (err) => toast.error(`Erro ao atualizar link: ${err.message}`),
   });
   const deleteLink = trpc.network.deleteLink.useMutation({ onSuccess: () => { refetchLinks(); toast.success("Link removido"); } });
+  const saveRoute = trpc.network.updateLink.useMutation({
+    onSuccess: () => { refetchLinks(); setEditingRouteLink(null); setEditingRoutePoints([]); toast.success("Traçado salvo com sucesso"); },
+    onError: (err) => toast.error(`Erro ao salvar traçado: ${err.message}`),
+  });
+
+  function startRouteEdit(linkId: number, segIdx: number, points: [number, number][]) {
+    // Disable hover box while editing
+    setHoveredLinkId(null);
+    setEditingRouteLink({ linkId, segIdx });
+    setEditingRoutePoints(points.length >= 2 ? [...points] : [...points]);
+  }
+
+  function cancelRouteEdit() {
+    setEditingRouteLink(null);
+    setEditingRoutePoints([]);
+  }
+
+  function confirmRouteEdit() {
+    if (!editingRouteLink) return;
+    const link = links.find((l) => l.id === editingRouteLink.linkId);
+    if (!link) return;
+    const segs = link.segments && link.segments.length > 0
+      ? link.segments
+      : [{ id: -1, linkId: link.id, toNodeId: link.toNodeId, toPortId: link.toPortId, toPortName: link.toPortName, routePoints: null, color: null, capacityBps: link.capacityBps }];
+    const updatedSegments = segs.map((seg, i) => ({
+      toNodeId: seg.toNodeId,
+      toPortId: seg.toPortId ?? undefined,
+      toPortName: seg.toPortName ?? undefined,
+      routePoints: i === editingRouteLink.segIdx ? editingRoutePoints : (seg.routePoints ?? undefined),
+      color: seg.color ?? undefined,
+      capacityBps: seg.capacityBps ?? undefined,
+    }));
+    saveRoute.mutate({
+      id: editingRouteLink.linkId,
+      segments: updatedSegments,
+    });
+  }
 
   // ─── Node CRUD ──────────────────────────────────────────────────────────────
   function openCreateNode() {
@@ -687,8 +819,69 @@ export default function NetworkMap() {
         )}
       </div>
 
-      {/* Map */}
-      <div ref={mapContainerRef} className="relative" style={{ height: mapHeight, minHeight: "400px" }}>
+        {/* Map */}
+        <div ref={mapContainerRef} className="relative" style={{ height: mapHeight, minHeight: "400px" }}>
+
+        {/* Route editing overlay (inside the relative map container) */}
+        {editingRouteLink && (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 2000,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "rgba(15,23,42,0.92)",
+              border: "1px solid #3b82f6",
+              borderRadius: 8,
+              padding: "8px 16px",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              fontFamily: "sans-serif",
+              fontSize: 13,
+              color: "white",
+              pointerEvents: "auto",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ marginRight: 4, color: "#93c5fd" }}>✏️ Editando traçado</span>
+            <span style={{ color: "#94a3b8", fontSize: 11 }}>Arraste os pontos • Clique nos cinzas para adicionar • Clique direito para remover</span>
+            <button
+              onClick={confirmRouteEdit}
+              disabled={saveRoute.isPending}
+              style={{
+                marginLeft: 12,
+                background: "#3b82f6",
+                color: "white",
+                border: "none",
+                borderRadius: 5,
+                padding: "5px 14px",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 13,
+                opacity: saveRoute.isPending ? 0.6 : 1,
+              }}
+            >
+              {saveRoute.isPending ? "Salvando..." : "✔ Salvar"}
+            </button>
+            <button
+              onClick={cancelRouteEdit}
+              style={{
+                background: "transparent",
+                color: "#94a3b8",
+                border: "1px solid #334155",
+                borderRadius: 5,
+                padding: "5px 12px",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+            >
+              ✕ Cancelar
+            </button>
+          </div>
+        )}
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center z-[1000] pointer-events-none">
             <div className="bg-card/90 border border-border rounded-xl p-6 text-center shadow-lg pointer-events-auto">
@@ -769,12 +962,14 @@ export default function NetworkMap() {
                   }}
                   eventHandlers={{
                     mouseover(e) {
+                      if (editingRouteLink) return; // don't show hover box while editing
                       setHoveredLinkId(link.id);
                       setHoveredSegmentIdx(segIdx);
                       const me = e.originalEvent as MouseEvent;
                       setHoveredLinkPos({ x: me.clientX, y: me.clientY });
                     },
                     mousemove(e) {
+                      if (editingRouteLink) return;
                       const me = e.originalEvent as MouseEvent;
                       setHoveredLinkPos({ x: me.clientX, y: me.clientY });
                     },
@@ -782,11 +977,38 @@ export default function NetworkMap() {
                       setHoveredLinkId(null);
                       setHoveredLinkPos(null);
                     },
+                    dblclick(e) {
+                      // Prevent map zoom on double click
+                      (e.originalEvent as MouseEvent).stopPropagation();
+                      L.DomEvent.stopPropagation(e);
+                      // Build the current route points for this segment
+                      const rawPts = seg.routePoints ?? link.routePoints ?? [];
+                      const safeRoutePoints = rawPts.filter(
+                        (pt): pt is [number, number] =>
+                          Array.isArray(pt) && pt.length === 2 &&
+                          pt[0] != null && pt[1] != null &&
+                          typeof pt[0] === 'number' && typeof pt[1] === 'number' &&
+                          isFinite(pt[0]) && isFinite(pt[1])
+                      );
+                      const editPoints: [number, number][] =
+                        link.useRoadRoute && safeRoutePoints.length > 1
+                          ? safeRoutePoints
+                          : [[fromNode.lat as number, fromNode.lng as number], [toNode.lat as number, toNode.lng as number]];
+                      startRouteEdit(link.id, segIdx, editPoints);
+                    },
                   }}
                 />
               );
             }).filter(Boolean);
           })}
+
+          {/* ─── Route editor: draggable waypoints when editing a segment ─── */}
+          {editingRouteLink && editingRoutePoints.length >= 2 && (
+            <RouteEditorLayer
+              points={editingRoutePoints}
+              onChange={setEditingRoutePoints}
+            />
+          )}
 
           {/* Draw nodes (circular markers) */}
           {nodesWithCoords.map((node) => {
