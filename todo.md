@@ -317,3 +317,12 @@
 - [x] Buscar dados de tráfego do LibreNMS em tempo real (endpoint /ports/{id})
 - [x] Colorir linha por utilização: verde <50%, amarelo 50-80%, vermelho >80%
 - [x] Build e deploy em produção
+
+## Fase 30 — Modernização visual do Mapa de Rede
+
+- [x] Redesenhar marcadores: ícone circular com halo colorido por status (vermelho=alto uso, laranja=médio, verde=baixo), estilo LibreNMS
+- [x] Botão "Ocultar nomes" no header do mapa para alternar visibilidade dos labels dos switches
+- [x] Rota por estradas calculada automaticamente ao criar/editar link (sem precisar ativar toggle manualmente)
+- [x] Caixa de tráfego: usar apenas fromPortId (porta de saída do nó de origem) para evitar conflitos
+- [x] Caixa de tráfego: exibir TX/RX com nome da porta, estilo popup simples como nas imagens de referência
+- [x] Build e deploy em produção
