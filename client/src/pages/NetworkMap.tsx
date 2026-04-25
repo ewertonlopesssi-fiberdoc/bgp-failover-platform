@@ -224,6 +224,9 @@ export default function NetworkMap() {
   const [linkDialog, setLinkDialog] = useState(false);
   const [editingLink, setEditingLink] = useState<NetworkLink | null>(null);
   const [linkForm, setLinkForm] = useState<LinkFormData>(emptyLinkForm());
+  // Capacity unit state: "mbps" | "gbps"
+  const [capacityUnit, setCapacityUnit] = useState<"mbps" | "gbps">("mbps");
+  const [capacityValue, setCapacityValue] = useState("");
 
   // Import dialog
   const [importDialog, setImportDialog] = useState(false);
@@ -235,6 +238,18 @@ export default function NetworkMap() {
     enabled: importDialog,
   });
 
+  // Ports for link dialog (fetched when a node with deviceId is selected)
+  const fromNode = nodes.find((n) => n.id.toString() === linkForm.fromNodeId);
+  const toNode = nodes.find((n) => n.id.toString() === linkForm.toNodeId);
+  const { data: fromPorts = [] } = trpc.network.getDevicePorts.useQuery(
+    { deviceId: fromNode?.deviceId ?? 0 },
+    { enabled: linkDialog && !!fromNode?.deviceId }
+  );
+  const { data: toPorts = [] } = trpc.network.getDevicePorts.useQuery(
+    { deviceId: toNode?.deviceId ?? 0 },
+    { enabled: linkDialog && !!toNode?.deviceId }
+  );
+
   // Mutations
   const createNode = trpc.network.createNode.useMutation({
     onSuccess: () => { refetchNodes(); setNodeDialog(false); toast.success("Nó criado com sucesso"); },
@@ -245,8 +260,14 @@ export default function NetworkMap() {
     onError: (err) => { toast.error(`Erro ao salvar nó: ${err.message}`); },
   });
   const deleteNode = trpc.network.deleteNode.useMutation({ onSuccess: () => { refetchNodes(); refetchLinks(); toast.success("Nó removido"); } });
-  const createLink = trpc.network.createLink.useMutation({ onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link criado com sucesso"); } });
-  const updateLink = trpc.network.updateLink.useMutation({ onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link atualizado"); } });
+  const createLink = trpc.network.createLink.useMutation({
+    onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link criado com sucesso"); },
+    onError: (err) => toast.error(`Erro ao criar link: ${err.message}`),
+  });
+  const updateLink = trpc.network.updateLink.useMutation({
+    onSuccess: () => { refetchLinks(); setLinkDialog(false); toast.success("Link atualizado"); },
+    onError: (err) => toast.error(`Erro ao atualizar link: ${err.message}`),
+  });
   const deleteLink = trpc.network.deleteLink.useMutation({ onSuccess: () => { refetchLinks(); toast.success("Link removido"); } });
 
   // ─── Node handlers ──────────────────────────────────────────────────────────
@@ -289,6 +310,8 @@ export default function NetworkMap() {
   function openCreateLink() {
     setEditingLink(null);
     setLinkForm(emptyLinkForm());
+    setCapacityValue("");
+    setCapacityUnit("mbps");
     setLinkDialog(true);
   }
   function openEditLink(link: NetworkLink) {
@@ -303,9 +326,18 @@ export default function NetworkMap() {
       linkType: link.linkType,
       capacityBps: link.capacityBps?.toString() || "",
     });
+    // Pre-fill capacity fields
+    if (link.capacityBps) {
+      if (link.capacityBps >= 1e9) { setCapacityUnit("gbps"); setCapacityValue(String(link.capacityBps / 1e9)); }
+      else { setCapacityUnit("mbps"); setCapacityValue(String(link.capacityBps / 1e6)); }
+    } else { setCapacityValue(""); setCapacityUnit("mbps"); }
     setLinkDialog(true);
   }
   function submitLink() {
+    // Convert capacity to bps
+    const capBps = capacityValue
+      ? parseFloat(capacityValue) * (capacityUnit === "gbps" ? 1e9 : 1e6)
+      : undefined;
     const payload = {
       fromNodeId: parseInt(linkForm.fromNodeId),
       fromPortId: linkForm.fromPortId ? parseInt(linkForm.fromPortId) : undefined,
@@ -314,7 +346,7 @@ export default function NetworkMap() {
       toPortId: linkForm.toPortId ? parseInt(linkForm.toPortId) : undefined,
       toPortName: linkForm.toPortName || undefined,
       linkType: linkForm.linkType,
-      capacityBps: linkForm.capacityBps ? parseFloat(linkForm.capacityBps) : undefined,
+      capacityBps: capBps,
     };
     if (editingLink) {
       updateLink.mutate({ id: editingLink.id, ...payload });
@@ -751,25 +783,55 @@ export default function NetworkMap() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Porta Origem</Label>
+            {/* Porta Origem */}
+            <div>
+              <Label>Porta Origem {fromNode?.deviceId ? "" : "(configure Device ID no nó para ver portas)"}</Label>
+              {fromPorts.length > 0 ? (
+                <Select
+                  value={linkForm.fromPortId}
+                  onValueChange={(v) => {
+                    const p = fromPorts.find((p) => p.portId.toString() === v);
+                    setLinkForm((f) => ({ ...f, fromPortId: v, fromPortName: p?.ifName || "" }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione a porta..." /></SelectTrigger>
+                  <SelectContent>
+                    {fromPorts.map((p) => (
+                      <SelectItem key={p.portId} value={p.portId.toString()}>
+                        {p.ifName}{p.ifAlias ? ` — ${p.ifAlias}` : ""}
+                        {p.ifSpeed ? ` (${p.ifSpeed >= 1e9 ? `${p.ifSpeed / 1e9}G` : `${p.ifSpeed / 1e6}M`})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
                 <Input value={linkForm.fromPortName} onChange={(e) => setLinkForm((f) => ({ ...f, fromPortName: e.target.value }))} placeholder="Ex: GE0/0/1" />
-              </div>
-              <div>
-                <Label>Porta Destino</Label>
-                <Input value={linkForm.toPortName} onChange={(e) => setLinkForm((f) => ({ ...f, toPortName: e.target.value }))} placeholder="Ex: GE0/0/3" />
-              </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Port ID Origem (LibreNMS)</Label>
-                <Input value={linkForm.fromPortId} onChange={(e) => setLinkForm((f) => ({ ...f, fromPortId: e.target.value }))} placeholder="Ex: 42" type="number" />
-              </div>
-              <div>
-                <Label>Port ID Destino (LibreNMS)</Label>
-                <Input value={linkForm.toPortId} onChange={(e) => setLinkForm((f) => ({ ...f, toPortId: e.target.value }))} placeholder="Ex: 55" type="number" />
-              </div>
+            {/* Porta Destino */}
+            <div>
+              <Label>Porta Destino {toNode?.deviceId ? "" : "(configure Device ID no nó para ver portas)"}</Label>
+              {toPorts.length > 0 ? (
+                <Select
+                  value={linkForm.toPortId}
+                  onValueChange={(v) => {
+                    const p = toPorts.find((p) => p.portId.toString() === v);
+                    setLinkForm((f) => ({ ...f, toPortId: v, toPortName: p?.ifName || "" }));
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione a porta..." /></SelectTrigger>
+                  <SelectContent>
+                    {toPorts.map((p) => (
+                      <SelectItem key={p.portId} value={p.portId.toString()}>
+                        {p.ifName}{p.ifAlias ? ` — ${p.ifAlias}` : ""}
+                        {p.ifSpeed ? ` (${p.ifSpeed >= 1e9 ? `${p.ifSpeed / 1e9}G` : `${p.ifSpeed / 1e6}M`})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input value={linkForm.toPortName} onChange={(e) => setLinkForm((f) => ({ ...f, toPortName: e.target.value }))} placeholder="Ex: GE0/0/3" />
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -785,8 +847,24 @@ export default function NetworkMap() {
                 </Select>
               </div>
               <div>
-                <Label>Capacidade (bps)</Label>
-                <Input value={linkForm.capacityBps} onChange={(e) => setLinkForm((f) => ({ ...f, capacityBps: e.target.value }))} placeholder="Ex: 1000000000" type="number" />
+                <Label>Capacidade</Label>
+                <div className="flex gap-1">
+                  <Input
+                    value={capacityValue}
+                    onChange={(e) => setCapacityValue(e.target.value)}
+                    placeholder="Ex: 100"
+                    type="number"
+                    min="0"
+                    className="flex-1"
+                  />
+                  <Select value={capacityUnit} onValueChange={(v) => setCapacityUnit(v as "mbps" | "gbps")}>
+                    <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mbps">Mbps</SelectItem>
+                      <SelectItem value="gbps">Gbps</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </div>

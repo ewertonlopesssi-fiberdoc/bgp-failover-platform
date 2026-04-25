@@ -938,7 +938,7 @@ export const appRouter = router({
     }),
 
     // Create a node
-    createNode: adminProcedure
+    createNode: localAuthProcedure
       .input(z.object({
         name: z.string().min(1),
         city: z.string().optional(),
@@ -955,7 +955,7 @@ export const appRouter = router({
       }),
 
     // Update a node
-    updateNode: adminProcedure
+    updateNode: localAuthProcedure
       .input(z.object({
         id: z.number(),
         name: z.string().min(1).optional(),
@@ -974,7 +974,7 @@ export const appRouter = router({
       }),
 
     // Delete a node (also deletes associated links)
-    deleteNode: adminProcedure
+    deleteNode: localAuthProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteNetworkNode(input.id);
@@ -987,7 +987,7 @@ export const appRouter = router({
     }),
 
     // Create a link
-    createLink: adminProcedure
+    createLink: localAuthProcedure
       .input(z.object({
         fromNodeId: z.number(),
         fromPortId: z.number().optional(),
@@ -1005,7 +1005,7 @@ export const appRouter = router({
       }),
 
     // Update a link
-    updateLink: adminProcedure
+    updateLink: localAuthProcedure
       .input(z.object({
         id: z.number(),
         fromPortId: z.number().optional(),
@@ -1023,7 +1023,7 @@ export const appRouter = router({
       }),
 
     // Delete a link
-    deleteLink: adminProcedure
+    deleteLink: localAuthProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteNetworkLink(input.id);
@@ -1031,7 +1031,30 @@ export const appRouter = router({
       }),
 
     // Get LibreNMS devices for import
-    getLibreNMSDevices: adminProcedure.query(async () => {
+    // Get ports for a specific device from LibreNMS
+    getDevicePorts: localAuthProcedure
+      .input(z.object({ deviceId: z.number() }))
+      .query(async ({ input }) => {
+        const LIBRENMS_URL = "http://45.237.165.251:8080";
+        const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+        try {
+          const resp = await fetch(
+            `${LIBRENMS_URL}/api/v0/ports?device_id=${input.deviceId}&columns=port_id,ifName,ifAlias,ifSpeed,ifOperStatus,ifAdminStatus`,
+            { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+          );
+          const data = await resp.json() as { ports?: Array<{ port_id: number; ifName: string; ifAlias?: string; ifSpeed?: number; ifOperStatus?: string }> };
+          return (data.ports || []).map((p) => ({
+            portId: Number(p.port_id),
+            ifName: p.ifName,
+            ifAlias: p.ifAlias || "",
+            ifSpeed: p.ifSpeed || 0,
+            status: p.ifOperStatus || "unknown",
+          }));
+        } catch {
+          return [];
+        }
+      }),
+    getLibreNMSDevices: localAuthProcedure.query(async () => {
       const LIBRENMS_URL = "http://45.237.165.251:8080";
       const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
       try {

@@ -294,3 +294,10 @@
 - [x] Adicionar draggable nos Markers do Leaflet com atualização automática de lat/lng ao soltar
 - [x] Toast de confirmação ao soltar o marcador
 - [x] Build e deploy em produção
+
+## Fase 28 — Melhorias no Mapa de Rede
+- [x] Corrigir bug: traçado de link não aparece (era FORBIDDEN silencioso, mudado para localAuthProcedure)
+- [x] Dropdown de portas do LibreNMS no formulário de link (origem e destino)
+- [x] Campo de capacidade em MB/Gbps (amigável, sem digitar bps)
+- [x] Renomear nós com nomes corretos (SW-ALAGOINHA, SW-ARCOVERDE, etc.)
+- [x] Build e deploy em produção
