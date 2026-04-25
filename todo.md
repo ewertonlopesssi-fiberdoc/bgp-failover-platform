@@ -315,5 +315,5 @@
 - [x] Opção "Rota por ruas" ao criar/editar link (toggle: linha reta vs rota real)
 - [x] Caixa flutuante ao hover na linha: tráfego IN/OUT, status da porta, velocidade, % utilização
 - [x] Buscar dados de tráfego do LibreNMS em tempo real (endpoint /ports/{id})
-- [ ] Colorir linha por utilização: verde <50%, amarelo 50-80%, vermelho >80% (pendente)
+- [x] Colorir linha por utilização: verde <50%, amarelo 50-80%, vermelho >80%
 - [x] Build e deploy em produção

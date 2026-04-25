@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 
 // ─── InvalidateSize: forces Leaflet to recalculate tile layout after mount ────
@@ -257,6 +257,23 @@ export default function NetworkMap() {
     { enabled: linkDialog && !!toNode?.deviceId }
   );
 
+  // Traffic query for ALL active links (for utilization-based coloring)
+  // Collect all unique portIds from active links that have ports assigned
+  const allLinkPortIds = useMemo(() => {
+    const ids = new Set<number>();
+    links.forEach((l) => {
+      if (l.active) {
+        if (l.fromPortId) ids.add(l.fromPortId);
+        if (l.toPortId) ids.add(l.toPortId);
+      }
+    });
+    return Array.from(ids);
+  }, [links]);
+  const { data: linksTrafficData } = trpc.network.getLinksTraffic.useQuery(
+    { portIds: allLinkPortIds },
+    { enabled: allLinkPortIds.length > 0, refetchInterval: 30000 }
+  );
+
   // Traffic query for hovered link
   const hoveredLink = links.find((l) => l.id === hoveredLinkId);
   const hoveredFromPortId = hoveredLink?.fromPortId ?? null;
@@ -502,12 +519,24 @@ export default function NetworkMap() {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 px-6 py-2 bg-card/50 border-b border-border text-xs text-muted-foreground">
-        <span className="font-semibold text-foreground">Links:</span>
-        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-blue-500 inline-block" /> Fibra</span>
-        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-amber-500 inline-block" /> Rádio</span>
-        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> Cobre</span>
-        <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-cyan-500 inline-block" /> VPN</span>
+      <div className="flex items-center flex-wrap gap-4 px-6 py-2 bg-card/50 border-b border-border text-xs text-muted-foreground">
+        {linksTrafficData && Object.keys(linksTrafficData).length > 0 ? (
+          <>
+            <span className="font-semibold text-foreground">Utilização:</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#22c55e" }} /> &lt;50%</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#f59e0b" }} /> 50-80%</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 inline-block" style={{ background: "#ef4444" }} /> &gt;80%</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-gray-500 inline-block" /> Sem dados</span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-foreground">Links:</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-blue-500 inline-block" /> Fibra</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-amber-500 inline-block" /> Rádio</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-purple-500 inline-block" /> Cobre</span>
+            <span className="flex items-center gap-1"><span className="w-4 h-0.5 bg-cyan-500 inline-block" /> VPN</span>
+          </>
+        )}
         <span className="ml-4 font-semibold text-foreground">Nós:</span>
         <span>🔷 Roteador</span><span>🔵 Switch</span><span>🟢 OLT</span><span>🖥️ Servidor</span><span>📡 PoP</span>
       </div>
@@ -549,7 +578,20 @@ export default function NetworkMap() {
             const toNode = nodes.find((n) => n.id === link.toNodeId);
             if (!fromNode?.lat || !fromNode?.lng || !toNode?.lat || !toNode?.lng) return null;
             const isHovered = hoveredLinkId === link.id;
-            const color = link.active ? LINK_COLORS[link.linkType as LinkType] : "#6b7280";
+            // Compute utilization color: green <50%, yellow 50-80%, red >80%
+            let utilColor: string | null = null;
+            if (link.active && link.fromPortId && linksTrafficData) {
+              const portData = linksTrafficData[link.fromPortId];
+              if (portData) {
+                const maxBps = Math.max(portData.inBps, portData.outBps);
+                const capBps = link.capacityBps ?? portData.speedBps;
+                if (capBps > 0) {
+                  const pct = (maxBps / capBps) * 100;
+                  utilColor = pct > 80 ? "#ef4444" : pct > 50 ? "#f59e0b" : "#22c55e";
+                }
+              }
+            }
+            const baseColor = link.active ? (utilColor ?? LINK_COLORS[link.linkType as LinkType]) : "#6b7280";
             // Use saved road route points or fallback to straight line
             const positions: [number, number][] =
               link.useRoadRoute && link.routePoints && link.routePoints.length > 1
@@ -560,7 +602,7 @@ export default function NetworkMap() {
                 key={link.id}
                 positions={positions}
                 pathOptions={{
-                  color: isHovered ? "#facc15" : color,
+                  color: isHovered ? "#facc15" : baseColor,
                   weight: isHovered ? 5 : (link.active ? 3 : 2),
                   opacity: link.active ? 0.9 : 0.4,
                   dashArray: link.active ? undefined : "6 4",

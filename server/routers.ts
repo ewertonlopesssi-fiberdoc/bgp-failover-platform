@@ -1062,6 +1062,36 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    // Get traffic for multiple port IDs at once (for link utilization coloring)
+    getLinksTraffic: localAuthProcedure
+      .input(z.object({ portIds: z.array(z.number()) }))
+      .query(async ({ input }) => {
+        const LIBRENMS_URL = "http://45.237.165.251:8080";
+        const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+        const results: Record<number, { inBps: number; outBps: number; operStatus: string; speedBps: number }> = {};
+        await Promise.all(
+          input.portIds.map(async (portId) => {
+            try {
+              const resp = await fetch(
+                `${LIBRENMS_URL}/api/v0/ports/${portId}`,
+                { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+              );
+              const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifSpeed?: number } };
+              const p = data.port;
+              if (p) {
+                results[portId] = {
+                  inBps: (p.ifInOctets_rate ?? 0) * 8,
+                  outBps: (p.ifOutOctets_rate ?? 0) * 8,
+                  operStatus: p.ifOperStatus ?? "unknown",
+                  speedBps: p.ifSpeed ?? 0,
+                };
+              }
+            } catch { /* ignore individual failures */ }
+          })
+        );
+        return results;
+      }),
+
     // Get LibreNMS devices for import
     // Get ports for a specific device from LibreNMS
     getDevicePorts: localAuthProcedure
