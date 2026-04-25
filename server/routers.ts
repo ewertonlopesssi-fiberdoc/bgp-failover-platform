@@ -1039,7 +1039,7 @@ export const appRouter = router({
         const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
         try {
           const resp = await fetch(
-            `${LIBRENMS_URL}/api/v0/ports?device_id=${input.deviceId}&columns=port_id,ifName,ifAlias,ifSpeed,ifOperStatus,ifAdminStatus`,
+            `${LIBRENMS_URL}/api/v0/devices/${input.deviceId}/ports?columns=port_id,ifName,ifAlias,ifSpeed,ifOperStatus,ifAdminStatus`,
             { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
           );
           const data = await resp.json() as { ports?: Array<{ port_id: number; ifName: string; ifAlias?: string; ifSpeed?: number; ifOperStatus?: string }> };

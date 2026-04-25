@@ -305,3 +305,7 @@
 ## Fase 28b — Correção dropdown portas destino
 - [x] Porta Destino mostrava portas do nó de origem — corrigido com key único por nodeId nos Select
 - [x] Build e deploy em produção
+
+## Fase 28c — Correção endpoint portas LibreNMS
+- [x] Endpoint /ports?device_id=X ignorava o filtro — corrigido para /devices/{id}/ports
+- [x] Build e deploy em produção
