@@ -283,6 +283,8 @@ export const networkLinks = mysqlTable("network_links", {
   toPortName: varchar("toPortName", { length: 100 }),
   linkType: mysqlEnum("linkType", ["fiber", "radio", "copper", "vpn"]).default("fiber").notNull(),
   capacityBps: float("capacityBps"),   // link capacity in bps (0 = unknown)
+  useRoadRoute: boolean("useRoadRoute").default(false).notNull(), // follow road routing via OSRM
+  routePoints: json("routePoints").$type<Array<[number, number]>>(), // cached OSRM route points [[lat,lng],...]
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

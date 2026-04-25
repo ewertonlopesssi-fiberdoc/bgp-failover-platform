@@ -997,6 +997,8 @@ export const appRouter = router({
         toPortName: z.string().optional(),
         linkType: z.enum(["fiber", "radio", "copper", "vpn"]).default("fiber"),
         capacityBps: z.number().optional(),
+        useRoadRoute: z.boolean().default(false),
+        routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
         active: z.boolean().default(true),
       }))
       .mutation(async ({ input }) => {
@@ -1014,12 +1016,42 @@ export const appRouter = router({
         toPortName: z.string().optional(),
         linkType: z.enum(["fiber", "radio", "copper", "vpn"]).optional(),
         capacityBps: z.number().optional(),
+        useRoadRoute: z.boolean().optional(),
+        routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
         active: z.boolean().optional(),
       }))
       .mutation(async ({ input }) => {
         const { id, ...data } = input;
         await db.updateNetworkLink(id, data);
         return { success: true };
+      }),
+
+    // Get real-time traffic for a LibreNMS port
+    getPortTraffic: localAuthProcedure
+      .input(z.object({ portId: z.number() }))
+      .query(async ({ input }) => {
+        const LIBRENMS_URL = "http://45.237.165.251:8080";
+        const LIBRENMS_TOKEN = "e18e2d9e97c107123d3bf6c5a5a24e49c671acffba6d8cada3fedb4f96597bdb";
+        try {
+          const resp = await fetch(
+            `${LIBRENMS_URL}/api/v0/ports/${input.portId}`,
+            { headers: { "X-Auth-Token": LIBRENMS_TOKEN } }
+          );
+          const data = await resp.json() as { port?: { ifInOctets_rate?: number; ifOutOctets_rate?: number; ifOperStatus?: string; ifAdminStatus?: string; ifSpeed?: number; ifAlias?: string; ifName?: string } };
+          const p = data.port;
+          if (!p) return null;
+          return {
+            inBps: (p.ifInOctets_rate ?? 0) * 8,
+            outBps: (p.ifOutOctets_rate ?? 0) * 8,
+            operStatus: p.ifOperStatus ?? "unknown",
+            adminStatus: p.ifAdminStatus ?? "unknown",
+            speedBps: p.ifSpeed ?? 0,
+            ifAlias: p.ifAlias ?? "",
+            ifName: p.ifName ?? "",
+          };
+        } catch {
+          return null;
+        }
       }),
 
     // Delete a link

@@ -88,6 +88,8 @@ interface NetworkLink {
   toPortId: number | null;
   toPortName: string | null;
   linkType: LinkType;
+  useRoadRoute: boolean;
+  routePoints: Array<[number, number]> | null;
   capacityBps: number | null;
   active: boolean;
 }
@@ -198,6 +200,7 @@ interface LinkFormData {
   toPortName: string;
   linkType: LinkType;
   capacityBps: string;
+  useRoadRoute: boolean;
 }
 const emptyLinkForm = (): LinkFormData => ({
   fromNodeId: "",
@@ -208,6 +211,7 @@ const emptyLinkForm = (): LinkFormData => ({
   toPortName: "",
   linkType: "fiber",
   capacityBps: "",
+  useRoadRoute: false,
 });
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -230,6 +234,9 @@ export default function NetworkMap() {
 
   // Import dialog
   const [importDialog, setImportDialog] = useState(false);
+  // Hover state for link traffic box
+  const [hoveredLinkId, setHoveredLinkId] = useState<number | null>(null);
+  const [hoveredLinkPos, setHoveredLinkPos] = useState<{ x: number; y: number } | null>(null);
 
   // Data
   const { data: nodes = [], refetch: refetchNodes } = trpc.network.listNodes.useQuery();
@@ -248,6 +255,19 @@ export default function NetworkMap() {
   const { data: toPorts = [] } = trpc.network.getDevicePorts.useQuery(
     { deviceId: toNode?.deviceId ?? 0 },
     { enabled: linkDialog && !!toNode?.deviceId }
+  );
+
+  // Traffic query for hovered link
+  const hoveredLink = links.find((l) => l.id === hoveredLinkId);
+  const hoveredFromPortId = hoveredLink?.fromPortId ?? null;
+  const hoveredToPortId = hoveredLink?.toPortId ?? null;
+  const { data: fromPortTraffic } = trpc.network.getPortTraffic.useQuery(
+    { portId: hoveredFromPortId! },
+    { enabled: !!hoveredFromPortId, refetchInterval: 10000 }
+  );
+  const { data: toPortTraffic } = trpc.network.getPortTraffic.useQuery(
+    { portId: hoveredToPortId! },
+    { enabled: !!hoveredToPortId, refetchInterval: 10000 }
   );
 
   // Mutations
@@ -325,6 +345,7 @@ export default function NetworkMap() {
       toPortName: link.toPortName || "",
       linkType: link.linkType,
       capacityBps: link.capacityBps?.toString() || "",
+      useRoadRoute: link.useRoadRoute ?? false,
     });
     // Pre-fill capacity fields
     if (link.capacityBps) {
@@ -333,11 +354,32 @@ export default function NetworkMap() {
     } else { setCapacityValue(""); setCapacityUnit("mbps"); }
     setLinkDialog(true);
   }
-  function submitLink() {
+  async function submitLink() {
     // Convert capacity to bps
     const capBps = capacityValue
       ? parseFloat(capacityValue) * (capacityUnit === "gbps" ? 1e9 : 1e6)
       : undefined;
+
+    // If useRoadRoute, fetch OSRM route before saving
+    let routePoints: Array<[number, number]> | undefined;
+    if (linkForm.useRoadRoute) {
+      const fNode = nodes.find((n) => n.id.toString() === linkForm.fromNodeId);
+      const tNode = nodes.find((n) => n.id.toString() === linkForm.toNodeId);
+      if (fNode?.lat && fNode?.lng && tNode?.lat && tNode?.lng) {
+        try {
+          const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${fNode.lng},${fNode.lat};${tNode.lng},${tNode.lat}?overview=full&geometries=geojson`;
+          const resp = await fetch(osrmUrl);
+          const data = await resp.json() as { routes?: Array<{ geometry: { coordinates: Array<[number, number]> } }> };
+          if (data.routes?.[0]) {
+            // OSRM returns [lng, lat], Leaflet needs [lat, lng]
+            routePoints = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]);
+          }
+        } catch {
+          toast.error("Erro ao buscar rota OSRM — usando linha reta");
+        }
+      }
+    }
+
     const payload = {
       fromNodeId: parseInt(linkForm.fromNodeId),
       fromPortId: linkForm.fromPortId ? parseInt(linkForm.fromPortId) : undefined,
@@ -347,6 +389,8 @@ export default function NetworkMap() {
       toPortName: linkForm.toPortName || undefined,
       linkType: linkForm.linkType,
       capacityBps: capBps,
+      useRoadRoute: linkForm.useRoadRoute,
+      routePoints,
     };
     if (editingLink) {
       updateLink.mutate({ id: editingLink.id, ...payload });
@@ -504,39 +548,39 @@ export default function NetworkMap() {
             const fromNode = nodes.find((n) => n.id === link.fromNodeId);
             const toNode = nodes.find((n) => n.id === link.toNodeId);
             if (!fromNode?.lat || !fromNode?.lng || !toNode?.lat || !toNode?.lng) return null;
+            const isHovered = hoveredLinkId === link.id;
             const color = link.active ? LINK_COLORS[link.linkType as LinkType] : "#6b7280";
-            const positions: [number, number][] = [
-              [fromNode.lat, fromNode.lng],
-              [toNode.lat, toNode.lng],
-            ];
+            // Use saved road route points or fallback to straight line
+            const positions: [number, number][] =
+              link.useRoadRoute && link.routePoints && link.routePoints.length > 1
+                ? link.routePoints
+                : [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
             return (
               <Polyline
                 key={link.id}
                 positions={positions}
                 pathOptions={{
-                  color,
-                  weight: link.active ? 3 : 2,
-                  opacity: link.active ? 0.85 : 0.4,
+                  color: isHovered ? "#facc15" : color,
+                  weight: isHovered ? 5 : (link.active ? 3 : 2),
+                  opacity: link.active ? 0.9 : 0.4,
                   dashArray: link.active ? undefined : "6 4",
                 }}
-              >
-                <Popup>
-                  <div style={{ fontFamily: "sans-serif", minWidth: 200 }}>
-                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
-                      {fromNode.name} → {toNode.name}
-                    </div>
-                    <div style={{ fontSize: 12 }}>Tipo: <b>{link.linkType}</b></div>
-                    {link.fromPortName && <div style={{ fontSize: 12 }}>Porta origem: {link.fromPortName}</div>}
-                    {link.toPortName && <div style={{ fontSize: 12 }}>Porta destino: {link.toPortName}</div>}
-                    {link.capacityBps && <div style={{ fontSize: 12 }}>Capacidade: {formatBps(link.capacityBps)}</div>}
-                    <div style={{ marginTop: 4 }}>
-                      <span style={{ background: link.active ? "#22c55e" : "#ef4444", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>
-                        {link.active ? "Ativo" : "Inativo"}
-                      </span>
-                    </div>
-                  </div>
-                </Popup>
-              </Polyline>
+                eventHandlers={{
+                  mouseover(e) {
+                    setHoveredLinkId(link.id);
+                    const mouseEvt = e.originalEvent as MouseEvent;
+                    setHoveredLinkPos({ x: mouseEvt.clientX, y: mouseEvt.clientY });
+                  },
+                  mousemove(e) {
+                    const mouseEvt = e.originalEvent as MouseEvent;
+                    setHoveredLinkPos({ x: mouseEvt.clientX, y: mouseEvt.clientY });
+                  },
+                  mouseout() {
+                    setHoveredLinkId(null);
+                    setHoveredLinkPos(null);
+                  },
+                }}
+              />
             );
           })}
 
@@ -589,6 +633,105 @@ export default function NetworkMap() {
           ))}
         </MapContainer>
       </div>
+
+      {/* ─── Traffic hover box ─────────────────────────────────────────────── */}
+      {hoveredLinkId !== null && hoveredLinkPos && hoveredLink && (() => {
+        const fromN = nodes.find((n) => n.id === hoveredLink.fromNodeId);
+        const toN = nodes.find((n) => n.id === hoveredLink.toNodeId);
+        const formatTraffic = (bps: number | null | undefined) => {
+          if (!bps) return "—";
+          if (bps >= 1e9) return `${(bps / 1e9).toFixed(2)} Gbps`;
+          if (bps >= 1e6) return `${(bps / 1e6).toFixed(2)} Mbps`;
+          if (bps >= 1e3) return `${(bps / 1e3).toFixed(1)} Kbps`;
+          return `${bps} bps`;
+        };
+        const utilPct = (bps: number | null | undefined) => {
+          if (!bps || !hoveredLink.capacityBps) return null;
+          return Math.min(100, Math.round((bps / hoveredLink.capacityBps) * 100));
+        };
+        const inBps = fromPortTraffic?.inBps ?? null;
+        const outBps = fromPortTraffic?.outBps ?? null;
+        const pctIn = utilPct(inBps);
+        const pctOut = utilPct(outBps);
+        const pctColor = (p: number | null) => !p ? "#22c55e" : p > 80 ? "#ef4444" : p > 50 ? "#f59e0b" : "#22c55e";
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left: hoveredLinkPos.x + 16,
+              top: hoveredLinkPos.y - 10,
+              zIndex: 3000,
+              pointerEvents: "none",
+            }}
+          >
+            <div className="bg-card border border-border rounded-lg shadow-xl p-3 text-sm min-w-[220px]">
+              <div className="font-semibold text-foreground mb-2 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full inline-block" style={{ background: LINK_COLORS[hoveredLink.linkType as LinkType] ?? "#6b7280" }} />
+                {fromN?.name ?? "?"} → {toN?.name ?? "?"}
+              </div>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Tipo:</span>
+                  <span className="text-foreground font-medium">{hoveredLink.linkType}</span>
+                </div>
+                {hoveredLink.capacityBps && (
+                  <div className="flex justify-between">
+                    <span>Capacidade:</span>
+                    <span className="text-foreground font-medium">{formatBps(hoveredLink.capacityBps)}</span>
+                  </div>
+                )}
+                {hoveredLink.fromPortName && (
+                  <div className="flex justify-between">
+                    <span>Porta origem:</span>
+                    <span className="text-foreground font-medium truncate max-w-[120px]">{hoveredLink.fromPortName}</span>
+                  </div>
+                )}
+                {hoveredLink.toPortName && (
+                  <div className="flex justify-between">
+                    <span>Porta destino:</span>
+                    <span className="text-foreground font-medium truncate max-w-[120px]">{hoveredLink.toPortName}</span>
+                  </div>
+                )}
+              </div>
+              {(hoveredLink.fromPortId || hoveredLink.toPortId) && (
+                <>
+                  <div className="border-t border-border my-2" />
+                  <div className="text-xs font-semibold text-foreground mb-1">Tráfego em tempo real</div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">↓ IN:</span>
+                      <span className="font-mono font-medium" style={{ color: pctColor(pctIn) }}>
+                        {fromPortTraffic ? formatTraffic(inBps) : "Carregando..."}
+                        {pctIn !== null && <span className="text-muted-foreground ml-1">({pctIn}%)</span>}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">↑ OUT:</span>
+                      <span className="font-mono font-medium" style={{ color: pctColor(pctOut) }}>
+                        {fromPortTraffic ? formatTraffic(outBps) : "Carregando..."}
+                        {pctOut !== null && <span className="text-muted-foreground ml-1">({pctOut}%)</span>}
+                      </span>
+                    </div>
+                    {fromPortTraffic?.operStatus && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Status:</span>
+                        <span className="font-medium" style={{ color: fromPortTraffic.operStatus === "up" ? "#22c55e" : "#ef4444" }}>
+                          {fromPortTraffic.operStatus}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {hoveredLink.useRoadRoute && (
+                <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                  <span>🛣️</span> Rota por estradas
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Sidebar ─────────────────────────────────────────────────────────── */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -869,11 +1012,33 @@ export default function NetworkMap() {
                 </div>
               </div>
             </div>
+            {/* Road route toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-border p-3 mt-1">
+              <div>
+                <div className="text-sm font-medium">Rota por estradas</div>
+                <div className="text-xs text-muted-foreground">Traçar a linha seguindo as vias reais do mapa (OSRM)</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={linkForm.useRoadRoute}
+                onClick={() => setLinkForm((f) => ({ ...f, useRoadRoute: !f.useRoadRoute }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  linkForm.useRoadRoute ? "bg-primary" : "bg-muted"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    linkForm.useRoadRoute ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLinkDialog(false)}>Cancelar</Button>
             <Button onClick={submitLink} disabled={!linkForm.fromNodeId || !linkForm.toNodeId || createLink.isPending || updateLink.isPending}>
-              {editingLink ? "Salvar" : "Criar"}
+              {(createLink.isPending || updateLink.isPending) ? "Calculando rota..." : (editingLink ? "Salvar" : "Criar")}
             </Button>
           </DialogFooter>
         </DialogContent>
