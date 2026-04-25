@@ -79,6 +79,16 @@ interface NetworkNode {
   deviceId: number | null;
   active: boolean;
 }
+interface NetworkLinkSegment {
+  id: number;
+  linkId: number;
+  toNodeId: number;
+  toPortId: number | null;
+  toPortName: string | null;
+  routePoints: Array<[number, number]> | null;
+  color: string | null;
+  capacityBps: number | null;
+}
 interface NetworkLink {
   id: number;
   fromNodeId: number;
@@ -92,6 +102,7 @@ interface NetworkLink {
   routePoints: Array<[number, number]> | null;
   capacityBps: number | null;
   active: boolean;
+  segments: NetworkLinkSegment[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -241,21 +252,29 @@ const emptyNodeForm = (): NodeFormData => ({
 });
 
 // ─── Link Form ────────────────────────────────────────────────────────────────
+interface SegmentFormData {
+  toNodeId: string;
+  toPortId: string;
+  toPortName: string;
+}
 interface LinkFormData {
   fromNodeId: string;
   fromPortId: string;
   fromPortName: string;
-  toNodeId: string;
+  toNodeId: string;       // legacy (first segment)
   toPortId: string;
   toPortName: string;
   linkType: LinkType;
   capacityBps: string;
   useRoadRoute: boolean;
+  segments: SegmentFormData[];
 }
+const emptySegment = (): SegmentFormData => ({ toNodeId: "", toPortId: "", toPortName: "" });
 const emptyLinkForm = (): LinkFormData => ({
   fromNodeId: "", fromPortId: "", fromPortName: "",
   toNodeId: "", toPortId: "", toPortName: "",
-  linkType: "fiber", capacityBps: "", useRoadRoute: true, // default ON
+  linkType: "fiber", capacityBps: "", useRoadRoute: true,
+  segments: [emptySegment()],
 });
 
 // ─── OSRM route fetcher ───────────────────────────────────────────────────────
@@ -453,6 +472,13 @@ export default function NetworkMap() {
       linkType: link.linkType,
       capacityBps: link.capacityBps?.toString() || "",
       useRoadRoute: link.useRoadRoute ?? true,
+      segments: link.segments && link.segments.length > 0
+        ? link.segments.map(s => ({
+            toNodeId: s.toNodeId.toString(),
+            toPortId: s.toPortId?.toString() || "",
+            toPortName: s.toPortName || "",
+          }))
+        : [{ toNodeId: link.toNodeId.toString(), toPortId: link.toPortId?.toString() || "", toPortName: link.toPortName || "" }],
     });
     if (link.capacityBps) {
       if (link.capacityBps >= 1e9) { setCapacityUnit("gbps"); setCapacityValue(String(link.capacityBps / 1e9)); }
@@ -465,31 +491,42 @@ export default function NetworkMap() {
     const capBps = capacityValue
       ? parseFloat(capacityValue) * (capacityUnit === "gbps" ? 1e9 : 1e6)
       : undefined;
-
-    // Always try to fetch OSRM route (useRoadRoute is true by default)
-    let routePoints: Array<[number, number]> | undefined;
     const fNode = nodes.find((n) => n.id.toString() === linkForm.fromNodeId);
-    const tNode = nodes.find((n) => n.id.toString() === linkForm.toNodeId);
-    if (linkForm.useRoadRoute && fNode?.lat && fNode?.lng && tNode?.lat && tNode?.lng) {
-      const pts = await fetchOsrmRoute(fNode.lat, fNode.lng, tNode.lat, tNode.lng);
-      if (pts) {
-        routePoints = pts;
-      } else {
-        toast.warning("Rota OSRM não disponível — usando linha reta");
-      }
+    // Validate: at least one segment with a destination
+    const validSegments = linkForm.segments.filter(s => s.toNodeId !== "");
+    if (validSegments.length === 0) {
+      toast.error("Selecione pelo menos um nó de destino");
+      return;
     }
-
+    // Calculate OSRM route for each segment
+    const segmentsWithRoutes = await Promise.all(validSegments.map(async (seg) => {
+      const tNode = nodes.find((n) => n.id.toString() === seg.toNodeId);
+      let routePoints: Array<[number, number]> | undefined;
+      if (linkForm.useRoadRoute && fNode?.lat && fNode?.lng && tNode?.lat && tNode?.lng) {
+        const pts = await fetchOsrmRoute(fNode.lat, fNode.lng, tNode.lat, tNode.lng);
+        if (pts) routePoints = pts;
+      }
+      return {
+        toNodeId: parseInt(seg.toNodeId),
+        toPortId: seg.toPortId ? parseInt(seg.toPortId) : undefined,
+        toPortName: seg.toPortName || undefined,
+        routePoints,
+        capacityBps: capBps,
+      };
+    }));
+    const firstSeg = segmentsWithRoutes[0];
     const payload = {
       fromNodeId: parseInt(linkForm.fromNodeId),
       fromPortId: linkForm.fromPortId ? parseInt(linkForm.fromPortId) : undefined,
       fromPortName: linkForm.fromPortName || undefined,
-      toNodeId: parseInt(linkForm.toNodeId),
-      toPortId: linkForm.toPortId ? parseInt(linkForm.toPortId) : undefined,
-      toPortName: linkForm.toPortName || undefined,
+      toNodeId: firstSeg.toNodeId,
+      toPortId: firstSeg.toPortId,
+      toPortName: firstSeg.toPortName,
       linkType: linkForm.linkType,
       capacityBps: capBps,
       useRoadRoute: linkForm.useRoadRoute,
-      routePoints,
+      routePoints: firstSeg.routePoints,
+      segments: segmentsWithRoutes,
     };
     if (editingLink) {
       updateLink.mutate({ id: editingLink.id, ...payload });
@@ -638,11 +675,10 @@ export default function NetworkMap() {
 
           {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodesWithCoords as NetworkNode[]} />}
 
-          {/* Draw links (polylines) */}
-          {links.map((link) => {
+          {/* Draw links (polylines) — each link can have multiple segments */}
+          {links.flatMap((link) => {
             const fromNode = nodes.find((n) => n.id === link.fromNodeId);
-            const toNode = nodes.find((n) => n.id === link.toNodeId);
-            if (!fromNode?.lat || !fromNode?.lng || !toNode?.lat || !toNode?.lng) return null;
+            if (!fromNode?.lat || !fromNode?.lng) return [];
             const isHovered = hoveredLinkId === link.id;
 
             // Utilization color
@@ -658,46 +694,55 @@ export default function NetworkMap() {
               lineColor = LINK_COLORS[link.linkType as LinkType];
             }
 
-            // Filter out any null/invalid coordinate pairs from routePoints
-            const safeRoutePoints = (link.routePoints ?? []).filter(
-              (pt): pt is [number, number] =>
-                Array.isArray(pt) && pt.length === 2 &&
-                pt[0] != null && pt[1] != null &&
-                typeof pt[0] === 'number' && typeof pt[1] === 'number' &&
-                isFinite(pt[0]) && isFinite(pt[1])
-            );
-            const positions: [number, number][] =
-              link.useRoadRoute && safeRoutePoints.length > 1
-                ? safeRoutePoints
-                : [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
+            // Use segments if available, otherwise fall back to legacy toNodeId
+            const segs = link.segments && link.segments.length > 0
+              ? link.segments
+              : [{ id: -1, linkId: link.id, toNodeId: link.toNodeId, toPortId: link.toPortId, toPortName: link.toPortName, routePoints: link.routePoints, color: null, capacityBps: link.capacityBps }];
 
-            return (
-              <Polyline
-                key={link.id}
-                positions={positions}
-                pathOptions={{
-                  color: isHovered ? "#facc15" : lineColor,
-                  weight: isHovered ? 5 : (link.active ? 3 : 2),
-                  opacity: link.active ? 1 : 0.4,
-                  dashArray: link.active ? undefined : "6 4",
-                }}
-                eventHandlers={{
-                  mouseover(e) {
-                    setHoveredLinkId(link.id);
-                    const me = e.originalEvent as MouseEvent;
-                    setHoveredLinkPos({ x: me.clientX, y: me.clientY });
-                  },
-                  mousemove(e) {
-                    const me = e.originalEvent as MouseEvent;
-                    setHoveredLinkPos({ x: me.clientX, y: me.clientY });
-                  },
-                  mouseout() {
-                    setHoveredLinkId(null);
-                    setHoveredLinkPos(null);
-                  },
-                }}
-              />
-            );
+            return segs.map((seg, segIdx) => {
+              const toNode = nodes.find((n) => n.id === seg.toNodeId);
+              if (!toNode?.lat || !toNode?.lng) return null;
+              const rawPts = seg.routePoints ?? link.routePoints ?? [];
+              const safeRoutePoints = rawPts.filter(
+                (pt): pt is [number, number] =>
+                  Array.isArray(pt) && pt.length === 2 &&
+                  pt[0] != null && pt[1] != null &&
+                  typeof pt[0] === 'number' && typeof pt[1] === 'number' &&
+                  isFinite(pt[0]) && isFinite(pt[1])
+              );
+              const positions: [number, number][] =
+                link.useRoadRoute && safeRoutePoints.length > 1
+                  ? safeRoutePoints
+                  : [[fromNode.lat!, fromNode.lng!], [toNode.lat, toNode.lng]];
+              const segColor = seg.color || lineColor;
+              return (
+                <Polyline
+                  key={`${link.id}-seg-${seg.id}-${segIdx}`}
+                  positions={positions}
+                  pathOptions={{
+                    color: isHovered ? "#facc15" : segColor,
+                    weight: isHovered ? 5 : (link.active ? 3 : 2),
+                    opacity: link.active ? 1 : 0.4,
+                    dashArray: link.active ? undefined : "6 4",
+                  }}
+                  eventHandlers={{
+                    mouseover(e) {
+                      setHoveredLinkId(link.id);
+                      const me = e.originalEvent as MouseEvent;
+                      setHoveredLinkPos({ x: me.clientX, y: me.clientY });
+                    },
+                    mousemove(e) {
+                      const me = e.originalEvent as MouseEvent;
+                      setHoveredLinkPos({ x: me.clientX, y: me.clientY });
+                    },
+                    mouseout() {
+                      setHoveredLinkId(null);
+                      setHoveredLinkPos(null);
+                    },
+                  }}
+                />
+              );
+            }).filter(Boolean);
           })}
 
           {/* Draw nodes (circular markers) */}
@@ -782,7 +827,13 @@ export default function NetworkMap() {
                 trafficLoading ? (
                   <div style={{ color: "#6b7280", fontSize: 12 }}>Carregando...</div>
                 ) : fromPortTraffic ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "40px 1fr", gap: "3px 8px", alignItems: "center" }}>
+                  <>
+                  {fromPortTraffic.ifAlias && (
+                    <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 5, fontStyle: "italic" }}>
+                      {fromPortTraffic.ifAlias}
+                    </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "50px 1fr", gap: "3px 8px", alignItems: "center" }}>
                     <span style={{ color: "#6b7280", fontSize: 12 }}>TX:</span>
                     <span style={{ fontWeight: 700, color: txPct !== null ? utilColor(txPct) : "#111827" }}>
                       {outBps !== null ? formatBps(outBps) : "—"}
@@ -795,9 +846,15 @@ export default function NetworkMap() {
                     </span>
                     {fromPortTraffic.operStatus && (
                       <>
-                        <span style={{ color: "#6b7280", fontSize: 12 }}>Status:</span>
-                        <span style={{ fontWeight: 600, color: fromPortTraffic.operStatus === "up" ? "#22c55e" : "#ef4444" }}>
-                          {fromPortTraffic.operStatus}
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>Sinal:</span>
+                        <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{
+                            display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+                            background: fromPortTraffic.operStatus === "up" ? "#22c55e" : fromPortTraffic.operStatus === "down" ? "#ef4444" : "#f59e0b"
+                          }} />
+                          <span style={{ color: fromPortTraffic.operStatus === "up" ? "#22c55e" : fromPortTraffic.operStatus === "down" ? "#ef4444" : "#f59e0b" }}>
+                            {fromPortTraffic.operStatus === "up" ? "Ativo" : fromPortTraffic.operStatus === "down" ? "Inativo" : fromPortTraffic.operStatus}
+                          </span>
                         </span>
                       </>
                     )}
@@ -808,6 +865,7 @@ export default function NetworkMap() {
                       </>
                     )}
                   </div>
+                  </>
                 ) : (
                   <div style={{ color: "#6b7280", fontSize: 12 }}>Sem dados de tráfego</div>
                 )
@@ -998,24 +1056,66 @@ export default function NetworkMap() {
             <DialogTitle>{editingLink ? "Editar Link" : "Adicionar Link"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Nó Origem *</Label>
-                <Select value={linkForm.fromNodeId} onValueChange={(v) => setLinkForm((f) => ({ ...f, fromNodeId: v, fromPortId: "", fromPortName: "" }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>
-                    {nodes.map((n) => <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            {/* Nó Origem */}
+            <div>
+              <Label>Nó Origem *</Label>
+              <Select value={linkForm.fromNodeId} onValueChange={(v) => setLinkForm((f) => ({ ...f, fromNodeId: v, fromPortId: "", fromPortName: "" }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  {nodes.map((n) => <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Destinos múltiplos */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label>Destinos *</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs px-2"
+                  onClick={() => setLinkForm((f) => ({ ...f, segments: [...f.segments, emptySegment()] }))}
+                >
+                  <Plus className="w-3 h-3 mr-1" /> Adicionar destino
+                </Button>
               </div>
-              <div>
-                <Label>Nó Destino *</Label>
-                <Select value={linkForm.toNodeId} onValueChange={(v) => setLinkForm((f) => ({ ...f, toNodeId: v, toPortId: "", toPortName: "" }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>
-                    {nodes.map((n) => <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                {linkForm.segments.map((seg, idx) => (
+                  <div key={idx} className="flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/30">
+                    <div className="flex-1">
+                      <Select
+                        value={seg.toNodeId}
+                        onValueChange={(v) => setLinkForm((f) => {
+                          const segs = [...f.segments];
+                          segs[idx] = { ...segs[idx], toNodeId: v, toPortId: "", toPortName: "" };
+                          return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
+                        })}
+                      >
+                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={`Destino ${idx + 1}...`} /></SelectTrigger>
+                        <SelectContent>
+                          {nodes.filter(n => n.id.toString() !== linkForm.fromNodeId).map((n) => (
+                            <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {linkForm.segments.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={() => setLinkForm((f) => {
+                          const segs = f.segments.filter((_, i) => i !== idx);
+                          return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
+                        })}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1107,7 +1207,7 @@ export default function NetworkMap() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLinkDialog(false)}>Cancelar</Button>
-            <Button onClick={submitLink} disabled={!linkForm.fromNodeId || !linkForm.toNodeId || createLink.isPending || updateLink.isPending}>
+            <Button onClick={submitLink} disabled={!linkForm.fromNodeId || linkForm.segments.every(s => !s.toNodeId) || createLink.isPending || updateLink.isPending}>
               {(createLink.isPending || updateLink.isPending) ? "Calculando rota..." : (editingLink ? "Salvar" : "Criar")}
             </Button>
           </DialogFooter>

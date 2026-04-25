@@ -13,6 +13,7 @@ import {
   latencyHistory,
   networkNodes, InsertNetworkNode,
   networkLinks, InsertNetworkLink,
+  networkLinkSegments, InsertNetworkLinkSegment,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -697,5 +698,42 @@ export async function updateNetworkLink(id: number, data: Partial<Omit<InsertNet
 export async function deleteNetworkLink(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  await db.delete(networkLinkSegments).where(eq(networkLinkSegments.linkId, id));
   await db.delete(networkLinks).where(eq(networkLinks.id, id));
+}
+
+// ─── Network Link Segments ────────────────────────────────────────────────────
+export async function listNetworkLinkSegments(linkId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(networkLinkSegments).where(eq(networkLinkSegments.linkId, linkId)).orderBy(networkLinkSegments.id);
+}
+export async function listAllNetworkLinkSegments() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(networkLinkSegments).orderBy(networkLinkSegments.linkId, networkLinkSegments.id);
+}
+export async function createNetworkLinkSegment(data: Omit<InsertNetworkLinkSegment, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(networkLinkSegments).values(data);
+  return result;
+}
+export async function updateNetworkLinkSegment(id: number, data: Partial<Omit<InsertNetworkLinkSegment, "id" | "createdAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(networkLinkSegments).set(data).where(eq(networkLinkSegments.id, id));
+}
+export async function deleteNetworkLinkSegment(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(networkLinkSegments).where(eq(networkLinkSegments.id, id));
+}
+export async function replaceNetworkLinkSegments(linkId: number, segments: Omit<InsertNetworkLinkSegment, "id" | "createdAt" | "linkId">[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(networkLinkSegments).where(eq(networkLinkSegments.linkId, linkId));
+  if (segments.length > 0) {
+    await db.insert(networkLinkSegments).values(segments.map(s => ({ ...s, linkId })));
+  }
 }

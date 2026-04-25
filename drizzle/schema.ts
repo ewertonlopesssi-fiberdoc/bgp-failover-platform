@@ -292,6 +292,21 @@ export const networkLinks = mysqlTable("network_links", {
 export type NetworkLink = typeof networkLinks.$inferSelect;
 export type InsertNetworkLink = typeof networkLinks.$inferInsert;
 
+// Each link can have multiple destination segments (1 link → N destinations)
+export const networkLinkSegments = mysqlTable("network_link_segments", {
+  id: int("id").autoincrement().primaryKey(),
+  linkId: int("linkId").notNull(),      // references network_links.id
+  toNodeId: int("toNodeId").notNull(),
+  toPortId: int("toPortId"),            // LibreNMS port_id at destination
+  toPortName: varchar("toPortName", { length: 100 }),
+  routePoints: json("routePoints").$type<Array<[number, number]>>(), // OSRM route for this segment
+  color: varchar("color", { length: 20 }),   // override color for this segment
+  capacityBps: float("capacityBps"),         // override capacity for this segment
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type NetworkLinkSegment = typeof networkLinkSegments.$inferSelect;
+export type InsertNetworkLinkSegment = typeof networkLinkSegments.$inferInsert;
+
 // Client failover state
 export const clientFailoverState = mysqlTable("client_failover_state", {
   id: int("id").autoincrement().primaryKey(),

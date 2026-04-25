@@ -984,64 +984,128 @@ export const appRouter = router({
     // List all links
     listLinks: localAuthProcedure.query(async () => {
       const links = await db.listNetworkLinks();
-      // Sanitize routePoints: ensure it is always a valid array of [number, number] tuples
-      return links.map((link) => {
-        let rp: Array<[number, number]> | null = null;
+      const allSegments = await db.listAllNetworkLinkSegments();
+      // Helper to sanitize routePoints
+      const sanitizeRoute = (raw: unknown): Array<[number, number]> | null => {
         try {
-          const raw = link.routePoints;
           const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-          if (Array.isArray(parsed)) {
-            const valid = parsed.filter(
-              (pt: unknown): pt is [number, number] =>
-                Array.isArray(pt) && pt.length === 2 &&
-                pt[0] != null && pt[1] != null &&
-                typeof pt[0] === "number" && typeof pt[1] === "number" &&
-                isFinite(pt[0]) && isFinite(pt[1])
-            );
-            rp = valid.length > 1 ? valid : null;
-          }
-        } catch { rp = null; }
-        return { ...link, routePoints: rp };
-      });
+          if (!Array.isArray(parsed)) return null;
+          const valid = parsed.filter(
+            (pt: unknown): pt is [number, number] =>
+              Array.isArray(pt) && pt.length === 2 &&
+              pt[0] != null && pt[1] != null &&
+              typeof pt[0] === "number" && typeof pt[1] === "number" &&
+              isFinite(pt[0]) && isFinite(pt[1])
+          );
+          return valid.length > 1 ? valid : null;
+        } catch { return null; }
+      };
+      // Group segments by linkId
+      const segmentsByLink: Record<number, typeof allSegments> = {};
+      for (const seg of allSegments) {
+        if (!segmentsByLink[seg.linkId]) segmentsByLink[seg.linkId] = [];
+        segmentsByLink[seg.linkId].push(seg);
+      }
+      return links.map((link) => ({
+        ...link,
+        routePoints: sanitizeRoute(link.routePoints),
+        segments: (segmentsByLink[link.id] ?? []).map(seg => ({
+          ...seg,
+          routePoints: sanitizeRoute(seg.routePoints),
+        })),
+      }));
     }),
 
-    // Create a link
+    // Create a link (with optional multiple destination segments)
     createLink: localAuthProcedure
       .input(z.object({
         fromNodeId: z.number(),
         fromPortId: z.number().optional(),
         fromPortName: z.string().optional(),
-        toNodeId: z.number(),
+        // Legacy single-destination fields (still supported)
+        toNodeId: z.number().optional(),
         toPortId: z.number().optional(),
         toPortName: z.string().optional(),
         linkType: z.enum(["fiber", "radio", "copper", "vpn"]).default("fiber"),
         capacityBps: z.number().optional(),
-        useRoadRoute: z.boolean().default(false),
+        useRoadRoute: z.boolean().default(true),
         routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
         active: z.boolean().default(true),
+        // Multi-destination segments
+        segments: z.array(z.object({
+          toNodeId: z.number(),
+          toPortId: z.number().optional(),
+          toPortName: z.string().optional(),
+          routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
+          color: z.string().optional(),
+          capacityBps: z.number().optional(),
+        })).optional(),
       }))
       .mutation(async ({ input }) => {
-        await db.createNetworkLink(input);
-        return { success: true };
+        const { segments, ...linkData } = input;
+        // Use first segment's toNodeId as the legacy toNodeId if not provided
+        const firstSeg = segments?.[0];
+        const toNodeId = linkData.toNodeId ?? firstSeg?.toNodeId;
+        if (!toNodeId) throw new TRPCError({ code: "BAD_REQUEST", message: "Pelo menos um destino é obrigatório" });
+        const result = await db.createNetworkLink({ ...linkData, toNodeId });
+        const linkId = (result as { insertId?: number })?.insertId;
+        // Create segments
+        const segsToCreate = segments && segments.length > 0 ? segments : [{
+          toNodeId,
+          toPortId: linkData.toPortId,
+          toPortName: linkData.toPortName,
+          routePoints: linkData.routePoints,
+          color: undefined,
+          capacityBps: linkData.capacityBps,
+        }];
+        if (linkId) {
+          await db.replaceNetworkLinkSegments(linkId, segsToCreate.map(s => ({
+            toNodeId: s.toNodeId,
+            toPortId: s.toPortId ?? null,
+            toPortName: s.toPortName ?? null,
+            routePoints: s.routePoints ?? null,
+            color: s.color ?? null,
+            capacityBps: s.capacityBps ?? null,
+          })));
+        }
+        return { success: true, linkId };
       }),
 
-    // Update a link
+    // Update a link (with optional multiple destination segments)
     updateLink: localAuthProcedure
       .input(z.object({
         id: z.number(),
-        fromPortId: z.number().optional(),
+        fromPortId: z.number().nullable().optional(),
         fromPortName: z.string().optional(),
-        toPortId: z.number().optional(),
+        toPortId: z.number().nullable().optional(),
         toPortName: z.string().optional(),
         linkType: z.enum(["fiber", "radio", "copper", "vpn"]).optional(),
-        capacityBps: z.number().optional(),
+        capacityBps: z.number().nullable().optional(),
         useRoadRoute: z.boolean().optional(),
-        routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
+        routePoints: z.array(z.tuple([z.number(), z.number()])).nullable().optional(),
         active: z.boolean().optional(),
+        segments: z.array(z.object({
+          toNodeId: z.number(),
+          toPortId: z.number().optional(),
+          toPortName: z.string().optional(),
+          routePoints: z.array(z.tuple([z.number(), z.number()])).optional(),
+          color: z.string().optional(),
+          capacityBps: z.number().optional(),
+        })).optional(),
       }))
       .mutation(async ({ input }) => {
-        const { id, ...data } = input;
+        const { id, segments, ...data } = input;
         await db.updateNetworkLink(id, data);
+        if (segments !== undefined) {
+          await db.replaceNetworkLinkSegments(id, segments.map(s => ({
+            toNodeId: s.toNodeId,
+            toPortId: s.toPortId ?? null,
+            toPortName: s.toPortName ?? null,
+            routePoints: s.routePoints ?? null,
+            color: s.color ?? null,
+            capacityBps: s.capacityBps ?? null,
+          })));
+        }
         return { success: true };
       }),
 

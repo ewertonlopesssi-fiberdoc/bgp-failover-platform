@@ -338,3 +338,13 @@
 - [x] Adicionar refresh automático a cada 5s na caixa de hover do link
 - [x] Testar com porta 40GE0/0/2 e verificar TX/RX em tempo real
 - [x] Build e deploy em produção
+
+## Fase 33 — Múltiplos destinos por link + sinal da porta na caixa de hover
+- [x] Criar tabela network_link_segments (linkId, toNodeId, toPortId, toPortName, routePoints, color, capacityBps)
+- [x] Migrar dados existentes de network_links para network_link_segments
+- [x] Atualizar procedures: createLink aceita array de segmentos, listLinks retorna segmentos aninhados
+- [x] Formulário: lista dinâmica de destinos (adicionar/remover) com botão + Adicionar destino
+- [x] Renderizar N polylines por link (uma por segmento), cada com hover individual
+- [x] Adicionar sinal da porta (ifOperStatus com indicador colorido) na caixa de hover
+- [x] Adicionar ifAlias (descrição da porta) na caixa de hover
+- [x] Build e deploy em produção
