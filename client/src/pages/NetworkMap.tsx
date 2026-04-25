@@ -318,6 +318,7 @@ export default function NetworkMap() {
 
   // Hover state for link traffic box
   const [hoveredLinkId, setHoveredLinkId] = useState<number | null>(null);
+  const [hoveredSegmentIdx, setHoveredSegmentIdx] = useState<number>(0);
   const [hoveredLinkPos, setHoveredLinkPos] = useState<{ x: number; y: number } | null>(null);
 
   // Data
@@ -329,15 +330,35 @@ export default function NetworkMap() {
 
   // Ports for link dialog (fetched when a node with deviceId is selected)
   const fromNodeObj = nodes.find((n) => n.id.toString() === linkForm.fromNodeId);
-  const toNodeObj = nodes.find((n) => n.id.toString() === linkForm.toNodeId);
   const { data: fromPorts = [] } = trpc.network.getDevicePorts.useQuery(
     { deviceId: fromNodeObj?.deviceId ?? 0 },
     { enabled: linkDialog && !!fromNodeObj?.deviceId }
   );
-  const { data: toPorts = [] } = trpc.network.getDevicePorts.useQuery(
-    { deviceId: toNodeObj?.deviceId ?? 0 },
-    { enabled: linkDialog && !!toNodeObj?.deviceId }
-  );
+  // Per-segment destination ports: collect unique deviceIds from all segments
+  const segmentDeviceIds = useMemo(() => {
+    const ids = new Set<number>();
+    linkForm.segments.forEach((seg) => {
+      const n = nodes.find((nd) => nd.id.toString() === seg.toNodeId);
+      if (n?.deviceId) ids.add(n.deviceId);
+    });
+    return Array.from(ids);
+  }, [linkForm.segments, nodes]);
+  // Fetch ports for each unique destination deviceId
+  const segPortQueries = [
+    trpc.network.getDevicePorts.useQuery({ deviceId: segmentDeviceIds[0] ?? 0 }, { enabled: linkDialog && !!segmentDeviceIds[0] }),
+    trpc.network.getDevicePorts.useQuery({ deviceId: segmentDeviceIds[1] ?? 0 }, { enabled: linkDialog && !!segmentDeviceIds[1] }),
+    trpc.network.getDevicePorts.useQuery({ deviceId: segmentDeviceIds[2] ?? 0 }, { enabled: linkDialog && !!segmentDeviceIds[2] }),
+    trpc.network.getDevicePorts.useQuery({ deviceId: segmentDeviceIds[3] ?? 0 }, { enabled: linkDialog && !!segmentDeviceIds[3] }),
+  ];
+  // Map deviceId -> ports array for easy lookup
+  const portsByDeviceId = useMemo(() => {
+    const map: Record<number, Array<{ portId: number; ifName: string; ifAlias: string; ifSpeed: number; status: string }>> = {};
+    segmentDeviceIds.forEach((did, i) => {
+      if (segPortQueries[i]?.data) map[did] = segPortQueries[i].data!;
+    });
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentDeviceIds, segPortQueries[0].data, segPortQueries[1].data, segPortQueries[2].data, segPortQueries[3].data]);
 
   // Traffic query for ALL active links (for utilization-based coloring)
   const allLinkPortIds = useMemo(() => {
@@ -352,20 +373,33 @@ export default function NetworkMap() {
     { enabled: allLinkPortIds.length > 0, refetchInterval: 10000 }
   );
 
-  // Traffic query for hovered link — only fromPortId (port of origin device)
+  // Traffic query for hovered link — resolves the hovered segment to get the correct port
   const hoveredLink = links.find((l) => l.id === hoveredLinkId);
+  // Resolve the hovered segment (could be a multi-destination hub link)
+  const hoveredSegments = hoveredLink
+    ? (hoveredLink.segments && hoveredLink.segments.length > 0
+        ? hoveredLink.segments
+        : [{ id: -1, linkId: hoveredLink.id, toNodeId: hoveredLink.toNodeId, toPortId: hoveredLink.toPortId, toPortName: hoveredLink.toPortName, routePoints: null, color: null, capacityBps: hoveredLink.capacityBps }])
+    : [];
+  const hoveredSeg = hoveredSegments[hoveredSegmentIdx] ?? hoveredSegments[0] ?? null;
+  // Destination node and port for the hovered segment
+  const hoveredToNode = hoveredSeg ? nodes.find((n) => n.id === hoveredSeg.toNodeId) : null;
+  const hoveredToPortId = hoveredSeg?.toPortId ?? null;
+  const hoveredToPortName = hoveredSeg?.toPortName ?? null;
+  const hoveredToDeviceId = hoveredToNode?.deviceId ?? null;
+  // Source node and port (always from the link origin)
   const hoveredFromPortId = hoveredLink?.fromPortId ?? null;
   const hoveredFromNode = hoveredLink ? nodes.find((n) => n.id === hoveredLink.fromNodeId) : null;
   const { data: fromPortTraffic, isLoading: trafficLoading, isFetching: trafficFetching } = trpc.network.getPortTraffic.useQuery(
     { portId: hoveredFromPortId! },
     { enabled: !!hoveredFromPortId, refetchInterval: 5000 }
   );
-  // DOM optical signal query (dBm + temperature) for hovered link's source port
-  const hoveredFromPortName = hoveredLink?.fromPortName ?? null;
-  const hoveredFromDeviceId = hoveredFromNode?.deviceId ?? null;
+  // DOM optical signal query for hovered segment's destination port (if configured), else source port
+  const domPortName = hoveredToPortName || hoveredLink?.fromPortName || null;
+  const domDeviceId = hoveredToPortName ? hoveredToDeviceId : (hoveredFromNode?.deviceId ?? null);
   const { data: portDOM } = trpc.network.getPortDOM.useQuery(
-    { ifName: hoveredFromPortName!, deviceId: hoveredFromDeviceId! },
-    { enabled: !!hoveredFromPortName && !!hoveredFromDeviceId, refetchInterval: 30000 }
+    { ifName: domPortName!, deviceId: domDeviceId! },
+    { enabled: !!domPortName && !!domDeviceId, refetchInterval: 30000 }
   );
 
   // Per-node utilization (max of all links from that node)
@@ -728,14 +762,15 @@ export default function NetworkMap() {
                   key={`${link.id}-seg-${seg.id}-${segIdx}`}
                   positions={positions}
                   pathOptions={{
-                    color: isHovered ? "#facc15" : segColor,
-                    weight: isHovered ? 5 : (link.active ? 3 : 2),
+                    color: isHovered && hoveredSegmentIdx === segIdx ? "#facc15" : segColor,
+                    weight: isHovered && hoveredSegmentIdx === segIdx ? 5 : (link.active ? 3 : 2),
                     opacity: link.active ? 1 : 0.4,
                     dashArray: link.active ? undefined : "6 4",
                   }}
                   eventHandlers={{
                     mouseover(e) {
                       setHoveredLinkId(link.id);
+                      setHoveredSegmentIdx(segIdx);
                       const me = e.originalEvent as MouseEvent;
                       setHoveredLinkPos({ x: me.clientX, y: me.clientY });
                     },
@@ -792,12 +827,19 @@ export default function NetworkMap() {
       {/* ─── Traffic hover box ─────────────────────────────────────────────── */}
       {hoveredLinkId !== null && hoveredLinkPos && hoveredLink && (() => {
         const fromN = nodes.find((n) => n.id === hoveredLink.fromNodeId);
-        const toN = nodes.find((n) => n.id === hoveredLink.toNodeId);
+        // Use the hovered segment's destination node
+        const toN = hoveredToNode ?? nodes.find((n) => n.id === hoveredLink.toNodeId);
         const inBps = fromPortTraffic?.inBps ?? null;
         const outBps = fromPortTraffic?.outBps ?? null;
-        const capBps = hoveredLink.capacityBps ?? fromPortTraffic?.speedBps ?? null;
+        const capBps = hoveredSeg?.capacityBps ?? hoveredLink.capacityBps ?? fromPortTraffic?.speedBps ?? null;
         const txPct = outBps && capBps ? Math.min(100, Math.round((outBps / capBps) * 100)) : null;
         const rxPct = inBps && capBps ? Math.min(100, Math.round((inBps / capBps) * 100)) : null;
+        // Header shows: source port → destination node (or destination port if configured)
+        const headerText = hoveredToPortName
+          ? `[ ${hoveredLink.fromPortName ?? fromN?.name ?? "?"} ] → [ ${hoveredToPortName} ]`
+          : hoveredLink.fromPortName
+          ? `[ ${hoveredLink.fromPortName} ] → ${toN?.name ?? "?"}`
+          : `${fromN?.name ?? "?"} \u2192 ${toN?.name ?? "?"}` ;
 
         return (
           <div
@@ -823,9 +865,7 @@ export default function NetworkMap() {
             >
               {/* Port name header */}
               <div style={{ fontWeight: 700, fontSize: 13, color: "#111827", marginBottom: 6, borderBottom: "1px solid #e5e7eb", paddingBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>{hoveredLink.fromPortName
-                  ? `[ ${hoveredLink.fromPortName} ]`
-                  : `${fromN?.name ?? "?"} \u2192 ${toN?.name ?? "?"}`}</span>
+                <span>{headerText}</span>
                 {trafficFetching && !trafficLoading && (
                   <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 400, marginLeft: 8 }}>\u21bb</span>
                 )}
@@ -1113,41 +1153,100 @@ export default function NetworkMap() {
                 </Button>
               </div>
               <div className="space-y-2">
-                {linkForm.segments.map((seg, idx) => (
-                  <div key={idx} className="flex items-center gap-2 p-2 rounded-lg border border-border bg-muted/30">
-                    <div className="flex-1">
-                      <Select
-                        value={seg.toNodeId}
-                        onValueChange={(v) => setLinkForm((f) => {
-                          const segs = [...f.segments];
-                          segs[idx] = { ...segs[idx], toNodeId: v, toPortId: "", toPortName: "" };
-                          return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
-                        })}
-                      >
-                        <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={`Destino ${idx + 1}...`} /></SelectTrigger>
-                        <SelectContent>
-                          {nodes.filter(n => n.id.toString() !== linkForm.fromNodeId).map((n) => (
-                            <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                {linkForm.segments.map((seg, idx) => {
+                  const segToNode = nodes.find((n) => n.id.toString() === seg.toNodeId);
+                  const segDeviceId = segToNode?.deviceId ?? null;
+                  const segPorts = segDeviceId ? (portsByDeviceId[segDeviceId] ?? []) : [];
+                  return (
+                  <div key={idx} className="rounded-lg border border-border bg-muted/30 p-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <Select
+                          value={seg.toNodeId}
+                          onValueChange={(v) => setLinkForm((f) => {
+                            const segs = [...f.segments];
+                            segs[idx] = { ...segs[idx], toNodeId: v, toPortId: "", toPortName: "" };
+                            return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
+                          })}
+                        >
+                          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder={`Destino ${idx + 1}...`} /></SelectTrigger>
+                          <SelectContent>
+                            {nodes.filter(n => n.id.toString() !== linkForm.fromNodeId).map((n) => (
+                              <SelectItem key={n.id} value={n.id.toString()}>{NODE_ICONS[n.nodeType as NodeType]} {n.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {linkForm.segments.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={() => setLinkForm((f) => {
+                            const segs = f.segments.filter((_, i) => i !== idx);
+                            return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
+                          })}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      )}
                     </div>
-                    {linkForm.segments.length > 1 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                        onClick={() => setLinkForm((f) => {
-                          const segs = f.segments.filter((_, i) => i !== idx);
-                          return { ...f, segments: segs, toNodeId: segs[0]?.toNodeId || "" };
-                        })}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                    {/* Per-segment destination port selector */}
+                    {seg.toNodeId && (
+                      <div>
+                        {segPorts.length > 0 ? (
+                          <Select
+                            key={`seg-port-${idx}-${seg.toNodeId}`}
+                            value={seg.toPortId || "__none__"}
+                            onValueChange={(v) => {
+                              const p = segPorts.find((p) => p.portId.toString() === v);
+                              setLinkForm((f) => {
+                                const segs = [...f.segments];
+                                segs[idx] = { ...segs[idx], toPortId: v === "__none__" ? "" : v, toPortName: p?.ifName || "" };
+                                return { ...f, segments: segs };
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Porta do destino (opcional)..." /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">Sem porta</SelectItem>
+                              {segPorts.map((p) => (
+                                <SelectItem key={p.portId} value={p.portId.toString()}>
+                                  {p.ifName}{p.ifAlias ? ` — ${p.ifAlias}` : ""}
+                                  {p.ifSpeed ? ` (${p.ifSpeed >= 1e9 ? `${p.ifSpeed / 1e9}G` : `${p.ifSpeed / 1e6}M`})` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : segDeviceId ? (
+                          <Input
+                            className="h-7 text-xs"
+                            value={seg.toPortName}
+                            onChange={(e) => setLinkForm((f) => {
+                              const segs = [...f.segments];
+                              segs[idx] = { ...segs[idx], toPortName: e.target.value };
+                              return { ...f, segments: segs };
+                            })}
+                            placeholder="Carregando portas..."
+                          />
+                        ) : (
+                          <Input
+                            className="h-7 text-xs"
+                            value={seg.toPortName}
+                            onChange={(e) => setLinkForm((f) => {
+                              const segs = [...f.segments];
+                              segs[idx] = { ...segs[idx], toPortName: e.target.value };
+                              return { ...f, segments: segs };
+                            })}
+                            placeholder="Porta do destino (opcional, ex: 40GE0/0/1)"
+                          />
+                        )}
+                      </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 

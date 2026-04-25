@@ -354,3 +354,4 @@
 - [x] Criar endpoint tRPC getPortDOM que busca dBm e temperatura por ifName/device_id no banco MySQL do LibreNMS
 - [x] Adicionar Rx dBm, Tx dBm e temperatura na caixa de hover do link (coloridos por faixa)
 - [x] Build e deploy em produção
+- [x] Porta por destino: cada destino no formulário de link deve ter seleção de porta própria (porta do nó destino), salva em network_link_segments.toPortId/toPortName; hover box deve mostrar DOM/tráfego da porta do segmento correto
