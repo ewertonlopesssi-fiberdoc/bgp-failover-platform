@@ -788,6 +788,7 @@ export default function NetworkMap() {
               <Label>Porta Origem {fromNode?.deviceId ? "" : "(configure Device ID no nó para ver portas)"}</Label>
               {fromPorts.length > 0 ? (
                 <Select
+                  key={`from-ports-${linkForm.fromNodeId}`}
                   value={linkForm.fromPortId}
                   onValueChange={(v) => {
                     const p = fromPorts.find((p) => p.portId.toString() === v);
@@ -813,6 +814,7 @@ export default function NetworkMap() {
               <Label>Porta Destino {toNode?.deviceId ? "" : "(configure Device ID no nó para ver portas)"}</Label>
               {toPorts.length > 0 ? (
                 <Select
+                  key={`to-ports-${linkForm.toNodeId}`}
                   value={linkForm.toPortId}
                   onValueChange={(v) => {
                     const p = toPorts.find((p) => p.portId.toString() === v);

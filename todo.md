@@ -301,3 +301,7 @@
 - [x] Campo de capacidade em MB/Gbps (amigável, sem digitar bps)
 - [x] Renomear nós com nomes corretos (SW-ALAGOINHA, SW-ARCOVERDE, etc.)
 - [x] Build e deploy em produção
+
+## Fase 28b — Correção dropdown portas destino
+- [x] Porta Destino mostrava portas do nó de origem — corrigido com key único por nodeId nos Select
+- [x] Build e deploy em produção
