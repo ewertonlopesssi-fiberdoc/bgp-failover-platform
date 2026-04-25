@@ -983,7 +983,26 @@ export const appRouter = router({
 
     // List all links
     listLinks: localAuthProcedure.query(async () => {
-      return db.listNetworkLinks();
+      const links = await db.listNetworkLinks();
+      // Sanitize routePoints: ensure it is always a valid array of [number, number] tuples
+      return links.map((link) => {
+        let rp: Array<[number, number]> | null = null;
+        try {
+          const raw = link.routePoints;
+          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter(
+              (pt: unknown): pt is [number, number] =>
+                Array.isArray(pt) && pt.length === 2 &&
+                pt[0] != null && pt[1] != null &&
+                typeof pt[0] === "number" && typeof pt[1] === "number" &&
+                isFinite(pt[0]) && isFinite(pt[1])
+            );
+            rp = valid.length > 1 ? valid : null;
+          }
+        } catch { rp = null; }
+        return { ...link, routePoints: rp };
+      });
     }),
 
     // Create a link

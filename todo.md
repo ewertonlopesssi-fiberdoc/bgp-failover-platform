@@ -326,3 +326,8 @@
 - [x] Caixa de tráfego: usar apenas fromPortId (porta de saída do nó de origem) para evitar conflitos
 - [x] Caixa de tráfego: exibir TX/RX com nome da porta, estilo popup simples como nas imagens de referência
 - [x] Build e deploy em produção
+
+## Fase 31 — Bugfix: crash ao adicionar link (routePoints nulos)
+- [x] Corrigir TypeError: routePoints nulos/mal formatados causando crash no Leaflet Polyline
+- [x] Garantir fallback para linha reta quando OSRM falha ou retorna vazio
+- [x] Build e deploy em produção

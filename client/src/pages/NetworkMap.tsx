@@ -658,9 +658,17 @@ export default function NetworkMap() {
               lineColor = LINK_COLORS[link.linkType as LinkType];
             }
 
+            // Filter out any null/invalid coordinate pairs from routePoints
+            const safeRoutePoints = (link.routePoints ?? []).filter(
+              (pt): pt is [number, number] =>
+                Array.isArray(pt) && pt.length === 2 &&
+                pt[0] != null && pt[1] != null &&
+                typeof pt[0] === 'number' && typeof pt[1] === 'number' &&
+                isFinite(pt[0]) && isFinite(pt[1])
+            );
             const positions: [number, number][] =
-              link.useRoadRoute && link.routePoints && link.routePoints.length > 1
-                ? link.routePoints
+              link.useRoadRoute && safeRoutePoints.length > 1
+                ? safeRoutePoints
                 : [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
 
             return (
