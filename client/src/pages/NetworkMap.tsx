@@ -347,9 +347,9 @@ function makeCustomerIcon(customer: MapCustomer, showLabel: boolean): L.DivIcon 
   return L.divIcon({
     className: "",
     iconSize: [size + 8, size + 8 + (showLabel ? 16 : 0)],
-    iconAnchor: [(size + 8) / 2, size + 8],
-    popupAnchor: [0, -(size + 8)],
-    html: `<div style="position:relative;width:${size + 8}px;height:${size + 8 + (showLabel ? 16 : 0)}px;cursor:pointer;"><div style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);"><svg width="${size + 8}" height="${size + 8}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/><path d="M16 8 L8 15 L10 15 L10 24 L14 24 L14 19 L18 19 L18 24 L22 24 L22 15 L24 15 Z" fill="white"/></svg></div>${labelHtml}</div>`,
+    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
+    popupAnchor: [0, -(size + 8) / 2],
+    html: `<div style="position:relative;width:${size + 8}px;height:${size + 8 + (showLabel ? 16 : 0)}px;cursor:grab;"><div style="position:absolute;top:0;left:50%;transform:translateX(-50%);pointer-events:none;"><svg width="${size + 8}" height="${size + 8}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none;"><circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/><path d="M16 8 L8 15 L10 15 L10 24 L14 24 L14 19 L18 19 L18 24 L22 24 L22 15 L24 15 Z" fill="white"/></svg></div>${labelHtml}</div>`,
   });
 }
 
@@ -1315,30 +1315,36 @@ export default function NetworkMap() {
           )}
 
           {/* ─── Customer markers ─── */}
-          {customers.filter(c => c.lat && c.lng).map((customer) => (
-            <Marker
-              key={`cust-${customer.id}-${showLabels}`}
-              position={[customer.lat!, customer.lng!]}
-              icon={makeCustomerIcon(customer as MapCustomer, showLabels)}
-              draggable={true}
-              eventHandlers={{
-                drag(e) {
-                  const latlng = (e.target as L.Marker).getLatLng();
-                  setDragCustomerPos({ id: customer.id, lat: latlng.lat, lng: latlng.lng });
-                },
-                dragend(e) {
-                  const latlng = (e.target as L.Marker).getLatLng();
-                  setDragCustomerPos(null);
-                  updateCustomer.mutate({ id: customer.id, lat: latlng.lat, lng: latlng.lng },
-                    { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
-                  );
-                },
-                click() {
-                  openEditCustomer(customer as MapCustomer);
-                },
-              }}
-            />
-          ))}
+          {customers.filter(c => c.lat && c.lng).map((customer) => {
+            let justDragged = false;
+            return (
+              <Marker
+                key={`cust-${customer.id}-${showLabels}`}
+                position={[customer.lat!, customer.lng!]}
+                icon={makeCustomerIcon(customer as MapCustomer, showLabels)}
+                draggable={true}
+                eventHandlers={{
+                  dragstart() { justDragged = false; },
+                  drag(e) {
+                    justDragged = true;
+                    const latlng = (e.target as L.Marker).getLatLng();
+                    setDragCustomerPos({ id: customer.id, lat: latlng.lat, lng: latlng.lng });
+                  },
+                  dragend(e) {
+                    const latlng = (e.target as L.Marker).getLatLng();
+                    setDragCustomerPos(null);
+                    updateCustomer.mutate({ id: customer.id, lat: latlng.lat, lng: latlng.lng },
+                      { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
+                    );
+                  },
+                  click() {
+                    if (justDragged) { justDragged = false; return; }
+                    openEditCustomer(customer as MapCustomer);
+                  },
+                }}
+              />
+            );
+          })}
 
           {/* Draw nodes (circular markers) */}
           {nodesWithCoords.map((node) => {
