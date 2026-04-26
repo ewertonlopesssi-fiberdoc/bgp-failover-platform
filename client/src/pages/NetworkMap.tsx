@@ -353,9 +353,8 @@ function makeCustomerIcon(customer: MapCustomer, showLabel: boolean): L.DivIcon 
   });
 }
 
-function MapFitBounds({ nodes }: { nodes: NetworkNode[] }) {
+function MapFitBounds({ nodes, hasFitted }: { nodes: NetworkNode[]; hasFitted: React.MutableRefObject<boolean> }) {
   const map = useMap();
-  const hasFitted = useRef(false);
   useEffect(() => {
     if (hasFitted.current) return;
     const withCoords = nodes.filter((n) => n.lat && n.lng);
@@ -367,7 +366,14 @@ function MapFitBounds({ nodes }: { nodes: NetworkNode[] }) {
       const bounds = L.latLngBounds(withCoords.map((n) => [n.lat!, n.lng!] as [number, number]));
       map.fitBounds(bounds, { padding: [60, 60] });
     }
-  }, [nodes, map]);
+  }, [nodes, map, hasFitted]);
+  return null;
+}
+
+// Disable double-click zoom via imperative API (guarantees it even after remounts)
+function DisableDblClickZoom() {
+  const map = useMap();
+  useEffect(() => { map.doubleClickZoom.disable(); }, [map]);
   return null;
 }
 
@@ -1012,6 +1018,7 @@ export default function NetworkMap() {
   }, []);
 
   // ─── Derived values ──────────────────────────────────────────────────────────
+  const mapHasFitted = useRef(false);
   const [showInactiveNodes, setShowInactiveNodes] = useState(true);
   const visibleNodes = useMemo(
     () => showInactiveNodes ? nodes : nodes.filter((n) => n.active !== false),
@@ -1235,7 +1242,8 @@ export default function NetworkMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodes.filter((n) => n.lat && n.lng) as NetworkNode[]} />}
+          <DisableDblClickZoom />
+          {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodes.filter((n) => n.lat && n.lng) as NetworkNode[]} hasFitted={mapHasFitted} />}
 
           {/* Pick-location click handler */}
           {pickMode && (
@@ -1428,14 +1436,17 @@ export default function NetworkMap() {
                 draggable={true}
                 eventHandlers={{
                   click(e) {
-                    // Prevent Leaflet's default zoom-in behavior on marker click
-                    L.DomEvent.stopPropagation(e);
+                    if (e.originalEvent) {
+                      L.DomEvent.stopPropagation(e.originalEvent);
+                      L.DomEvent.preventDefault(e.originalEvent);
+                    }
                     openEditNode(node as NetworkNode);
                   },
                   dblclick(e) {
-                    // Prevent map zoom on double-click
-                    (e.originalEvent as MouseEvent).stopPropagation();
-                    L.DomEvent.stopPropagation(e);
+                    if (e.originalEvent) {
+                      L.DomEvent.stopPropagation(e.originalEvent);
+                      L.DomEvent.preventDefault(e.originalEvent);
+                    }
                   },
                   drag(e) {
                     const latlng = (e.target as L.Marker).getLatLng();
