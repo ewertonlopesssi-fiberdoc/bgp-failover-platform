@@ -152,3 +152,15 @@
     }
   }
 }
+/* ─── Leaflet customer marker ─────────────────────────────────────────────── */
+.leaflet-customer-icon {
+  background: transparent !important;
+  border: none !important;
+  cursor: grab !important;
+}
+.leaflet-customer-icon:active {
+  cursor: grabbing !important;
+}
+.leaflet-marker-draggable .leaflet-customer-icon {
+  cursor: grab !important;
+}

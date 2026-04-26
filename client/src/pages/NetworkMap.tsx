@@ -340,16 +340,16 @@ function makeNodeIcon(
 // ─── Customer icon (house pin) ──────────────────────────────────────────────
 function makeCustomerIcon(customer: MapCustomer, showLabel: boolean): L.DivIcon {
   const color = customer.active ? "#f97316" : "#9ca3af";
-  const size = 24;
+  const size = 32;
   const labelHtml = showLabel
-    ? `<div style="position:absolute;top:${size + 6}px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:700;color:#1e293b;text-shadow:0 0 3px white,0 0 3px white;pointer-events:none;">${customer.name}</div>`
+    ? `<div style="position:absolute;top:${size + 4}px;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:10px;font-weight:700;color:#1e293b;text-shadow:0 0 3px white,0 0 3px white;pointer-events:none;">${customer.name}</div>`
     : "";
   return L.divIcon({
-    className: "",
-    iconSize: [size + 8, size + 8 + (showLabel ? 16 : 0)],
-    iconAnchor: [(size + 8) / 2, (size + 8) / 2],
-    popupAnchor: [0, -(size + 8) / 2],
-    html: `<div style="position:relative;width:${size + 8}px;height:${size + 8 + (showLabel ? 16 : 0)}px;cursor:grab;"><div style="position:absolute;top:0;left:50%;transform:translateX(-50%);pointer-events:none;"><svg width="${size + 8}" height="${size + 8}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="pointer-events:none;"><circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/><path d="M16 8 L8 15 L10 15 L10 24 L14 24 L14 19 L18 19 L18 24 L22 24 L22 15 L24 15 Z" fill="white"/></svg></div>${labelHtml}</div>`,
+    className: "leaflet-customer-icon",
+    iconSize: [size, size + (showLabel ? 16 : 0)],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+    html: `<div style="width:${size}px;height:${size}px;position:relative;"><svg width="${size}" height="${size}" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="${color}" stroke="white" stroke-width="2"/><path d="M16 8 L8 15 L10 15 L10 24 L14 24 L14 19 L18 19 L18 24 L22 24 L22 15 L24 15 Z" fill="white"/></svg>${labelHtml}</div>`,
   });
 }
 
