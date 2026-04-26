@@ -652,8 +652,8 @@ export default function NetworkMap() {
   function openCreateCustomer() {
     setEditingCustomer(null);
     setCustomerForm({ name: "", address: "", lat: "", lng: "", active: true });
+    setSidebarOpen(false); // close sidebar so banner is visible
     setPickMode("customer");
-    toast.info("📍 Clique no mapa para posicionar o cliente", { duration: 4000 });
   }
   function openEditCustomer(c: MapCustomer) {
     setEditingCustomer(c);
@@ -747,8 +747,8 @@ export default function NetworkMap() {
   function openCreateNode() {
     setEditingNode(null);
     setNodeForm(emptyNodeForm());
+    setSidebarOpen(false); // close sidebar so banner is visible
     setPickMode("node");
-    toast.info("📍 Clique no mapa para posicionar o nó", { duration: 4000 });
   }
   function openEditNode(node: NetworkNode) {
     setEditingNode(node);
@@ -1111,16 +1111,17 @@ export default function NetworkMap() {
         {/* Pick-location overlay instruction */}
         {pickMode && (
           <div style={{
-            position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
-            zIndex: 2000, background: "rgba(15,23,42,0.92)", borderRadius: 8, padding: "10px 20px",
-            display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
+            position: "fixed", top: 80, left: "50%", transform: "translateX(-50%)",
+            zIndex: 9999, background: "rgba(15,23,42,0.97)", borderRadius: 10, padding: "12px 24px",
+            display: "flex", alignItems: "center", gap: 12, boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
             color: "white", pointerEvents: "auto", whiteSpace: "nowrap",
+            border: "2px solid #3b82f6",
           }}>
-            <span style={{ fontSize: 18 }}>📍</span>
-            <span style={{ fontWeight: 600 }}>Clique no mapa para posicionar o {pickMode === "node" ? "nó" : "cliente"}</span>
+            <span style={{ fontSize: 20 }}>📍</span>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>Clique no mapa para posicionar o {pickMode === "node" ? "nó" : "cliente"}</span>
             <button
               onClick={() => setPickMode(null)}
-              style={{ marginLeft: 12, background: "transparent", color: "#94a3b8", border: "1px solid #334155", borderRadius: 5, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}
+              style={{ marginLeft: 12, background: "transparent", color: "#94a3b8", border: "1px solid #334155", borderRadius: 5, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}
             >✕ Cancelar</button>
           </div>
         )}
