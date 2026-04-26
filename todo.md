@@ -375,3 +375,4 @@
 - [x] Feature: botão "Ocultar/Mostrar inativos" no header do NetworkMap para filtrar nós com `active=false` do mapa
 - [x] Bug fix: polylines (links) também respeitam a visibilidade de nós inativos (fromNode e toNode buscados em `visibleNodes`)
 - [x] Bug fix: zoom abrupto ao clicar em nó — adicionado handler `click` que abre o painel de edição sem zoom, `dblclick` que previne zoom duplo, e `doubleClickZoom={false}` no MapContainer
+- [x] Bug fix: arraste de nós no mapa parou de funcionar após correção do zoom — remover preventDefault do click e usar abordagem alternativa para bloquear zoom sem quebrar drag

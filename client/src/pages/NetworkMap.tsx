@@ -1436,13 +1436,14 @@ export default function NetworkMap() {
                 draggable={true}
                 eventHandlers={{
                   click(e) {
+                    // Stop propagation to map so it doesn't trigger map-level click handlers
                     if (e.originalEvent) {
                       L.DomEvent.stopPropagation(e.originalEvent);
-                      L.DomEvent.preventDefault(e.originalEvent);
                     }
                     openEditNode(node as NetworkNode);
                   },
                   dblclick(e) {
+                    // Stop dblclick from reaching the map (prevents any residual zoom)
                     if (e.originalEvent) {
                       L.DomEvent.stopPropagation(e.originalEvent);
                       L.DomEvent.preventDefault(e.originalEvent);
