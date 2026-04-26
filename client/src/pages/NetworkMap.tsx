@@ -426,6 +426,70 @@ async function fetchOsrmRoute(
   return null;
 }
 
+// ─── CustomerMarker: dedicated component with proper drag handling ──────────────
+function CustomerMarker({
+  customer,
+  showLabels,
+  onDrag,
+  onDragEnd,
+  onClick,
+}: {
+  customer: MapCustomer;
+  showLabels: boolean;
+  onDrag: (lat: number, lng: number) => void;
+  onDragEnd: (lat: number, lng: number) => void;
+  onClick: () => void;
+}) {
+  const markerRef = useRef<L.Marker | null>(null);
+  const map = useMap();
+  const isDragging = useRef(false);
+  const icon = useMemo(() => makeCustomerIcon(customer, showLabels), [customer, showLabels]);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+
+    const handleDragStart = () => {
+      isDragging.current = true;
+      map.dragging.disable();
+    };
+    const handleDrag = () => {
+      const latlng = marker.getLatLng();
+      onDrag(latlng.lat, latlng.lng);
+    };
+    const handleDragEnd = () => {
+      const latlng = marker.getLatLng();
+      map.dragging.enable();
+      setTimeout(() => { isDragging.current = false; }, 200);
+      onDragEnd(latlng.lat, latlng.lng);
+    };
+    const handleClick = () => {
+      if (isDragging.current) return;
+      onClick();
+    };
+
+    marker.on('dragstart', handleDragStart);
+    marker.on('drag', handleDrag);
+    marker.on('dragend', handleDragEnd);
+    marker.on('click', handleClick);
+    return () => {
+      marker.off('dragstart', handleDragStart);
+      marker.off('drag', handleDrag);
+      marker.off('dragend', handleDragEnd);
+      marker.off('click', handleClick);
+    };
+  }, [map, onDrag, onDragEnd, onClick]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[customer.lat!, customer.lng!]}
+      icon={icon}
+      draggable={true}
+    />
+  );
+}
+
 // ─── MapClickHandler: captures click on map to pick coordinates ──────────────
 function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   const map = useMap();
@@ -1315,36 +1379,22 @@ export default function NetworkMap() {
           )}
 
           {/* ─── Customer markers ─── */}
-          {customers.filter(c => c.lat && c.lng).map((customer) => {
-            let justDragged = false;
-            return (
-              <Marker
-                key={`cust-${customer.id}-${showLabels}`}
-                position={[customer.lat!, customer.lng!]}
-                icon={makeCustomerIcon(customer as MapCustomer, showLabels)}
-                draggable={true}
-                eventHandlers={{
-                  dragstart() { justDragged = false; },
-                  drag(e) {
-                    justDragged = true;
-                    const latlng = (e.target as L.Marker).getLatLng();
-                    setDragCustomerPos({ id: customer.id, lat: latlng.lat, lng: latlng.lng });
-                  },
-                  dragend(e) {
-                    const latlng = (e.target as L.Marker).getLatLng();
-                    setDragCustomerPos(null);
-                    updateCustomer.mutate({ id: customer.id, lat: latlng.lat, lng: latlng.lng },
-                      { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
-                    );
-                  },
-                  click() {
-                    if (justDragged) { justDragged = false; return; }
-                    openEditCustomer(customer as MapCustomer);
-                  },
-                }}
-              />
-            );
-          })}
+          {customers.filter(c => c.lat && c.lng).map((customer) => (
+            <CustomerMarker
+              key={`cust-${customer.id}`}
+              customer={customer as MapCustomer}
+              showLabels={showLabels}
+              onDrag={(lat, lng) => setDragCustomerPos({ id: customer.id, lat, lng })}
+              onDragEnd={(lat, lng) => {
+                setDragCustomerPos(null);
+                updateCustomer.mutate(
+                  { id: customer.id, lat, lng },
+                  { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
+                );
+              }}
+              onClick={() => openEditCustomer(customer as MapCustomer)}
+            />
+          ))}
 
           {/* Draw nodes (circular markers) */}
           {nodesWithCoords.map((node) => {
