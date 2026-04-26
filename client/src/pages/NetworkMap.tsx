@@ -915,6 +915,18 @@ export default function NetworkMap() {
     }
   }
 
+  // ─── Pick-location handler (must be outside conditional JSX) ─────────────────
+  const handlePickLocation = useCallback((lat: number, lng: number) => {
+    if (pickMode === "node") {
+      setNodeForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+      setNodeDialog(true);
+    } else if (pickMode === "customer") {
+      setCustomerForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+      setCustomerDialog(true);
+    }
+    setPickMode(null);
+  }, [pickMode]);
+
   // ─── Map container height ────────────────────────────────────────────────────
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [mapHeight, setMapHeight] = useState("calc(100vh - 130px)");
@@ -1142,18 +1154,7 @@ export default function NetworkMap() {
 
           {/* Pick-location click handler */}
           {pickMode && (
-            <MapClickHandler
-              onPick={useCallback((lat: number, lng: number) => {
-                if (pickMode === "node") {
-                  setNodeForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
-                  setNodeDialog(true);
-                } else if (pickMode === "customer") {
-                  setCustomerForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
-                  setCustomerDialog(true);
-                }
-                setPickMode(null);
-              }, [pickMode])}
-            />
+            <MapClickHandler onPick={handlePickLocation} />
           )}
 
           {/* Draw links (polylines) — each link can have multiple segments */}
