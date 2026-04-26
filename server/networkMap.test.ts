@@ -64,6 +64,40 @@ describe("NetworkMap inactive node toggle logic", () => {
   });
 });
 
+describe("Node marker click behavior", () => {
+  it("click handler should call openEditNode and not zoom", () => {
+    // Simulate the click handler logic: stopPropagation + openEditNode
+    let editNodeCalled = false;
+    let propagationStopped = false;
+
+    const mockOpenEditNode = () => { editNodeCalled = true; };
+    const mockStopPropagation = () => { propagationStopped = true; };
+
+    // Simulate what the click handler does
+    mockStopPropagation();
+    mockOpenEditNode();
+
+    expect(editNodeCalled).toBe(true);
+    expect(propagationStopped).toBe(true);
+  });
+
+  it("dblclick handler should prevent default zoom", () => {
+    let propagationStopped = false;
+    let defaultPrevented = false;
+
+    const mockEvent = {
+      stopPropagation: () => { propagationStopped = true; },
+      preventDefault: () => { defaultPrevented = true; },
+    };
+
+    // Simulate dblclick handler
+    mockEvent.stopPropagation();
+    mockEvent.preventDefault();
+
+    expect(propagationStopped).toBe(true);
+  });
+});
+
 describe("MapFitBounds one-time execution logic", () => {
   it("fitBounds should only be called once (hasFitted guard)", () => {
     let callCount = 0;

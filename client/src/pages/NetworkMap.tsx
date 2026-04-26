@@ -1227,6 +1227,7 @@ export default function NetworkMap() {
           zoom={9}
           style={{ width: "100%", height: "100%", position: "absolute", inset: 0, cursor: pickMode ? "crosshair" : "" }}
           scrollWheelZoom={true}
+          doubleClickZoom={false}
         >
           <InvalidateSize />
           <TileLayer
@@ -1426,6 +1427,16 @@ export default function NetworkMap() {
                 icon={makeNodeIcon(node as NetworkNode, pct, showLabels)}
                 draggable={true}
                 eventHandlers={{
+                  click(e) {
+                    // Prevent Leaflet's default zoom-in behavior on marker click
+                    L.DomEvent.stopPropagation(e);
+                    openEditNode(node as NetworkNode);
+                  },
+                  dblclick(e) {
+                    // Prevent map zoom on double-click
+                    (e.originalEvent as MouseEvent).stopPropagation();
+                    L.DomEvent.stopPropagation(e);
+                  },
                   drag(e) {
                     const latlng = (e.target as L.Marker).getLatLng();
                     setDragNodePos({ id: node.id, lat: latlng.lat, lng: latlng.lng });

@@ -374,3 +374,4 @@
 - [x] Bug fix: MapFitBounds usa ref `hasFitted` para executar fitBounds apenas uma vez, corrigindo desaparecimento de linhas ao fazer zoom out
 - [x] Feature: botão "Ocultar/Mostrar inativos" no header do NetworkMap para filtrar nós com `active=false` do mapa
 - [x] Bug fix: polylines (links) também respeitam a visibilidade de nós inativos (fromNode e toNode buscados em `visibleNodes`)
+- [x] Bug fix: zoom abrupto ao clicar em nó — adicionado handler `click` que abre o painel de edição sem zoom, `dblclick` que previne zoom duplo, e `doubleClickZoom={false}` no MapContainer
