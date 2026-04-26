@@ -365,3 +365,6 @@
 - [ ] UI: formulário de link cliente→switch com seleção de nó destino e porta
 - [ ] UI: edição interativa do traçado do link de acesso (mesmo sistema dos links de rede)
 - [ ] UI: hover box no link de acesso mostrando cliente, nó, porta e tráfego
+- [x] Clicar no mapa para definir coordenadas ao criar nó ou cliente
+- [x] Arrastar marcadores de nó e cliente no mapa para reposicionar
+- [x] Linhas conectadas acompanham dinamicamente ao arrastar nó/cliente

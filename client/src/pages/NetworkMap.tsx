@@ -426,6 +426,17 @@ async function fetchOsrmRoute(
   return null;
 }
 
+// ─── MapClickHandler: captures click on map to pick coordinates ──────────────
+function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = (e: L.LeafletMouseEvent) => onPick(e.latlng.lat, e.latlng.lng);
+    map.on("click", handler);
+    return () => { map.off("click", handler); };
+  }, [map, onPick]);
+  return null;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function NetworkMap() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -472,6 +483,13 @@ export default function NetworkMap() {
   // Route editing state
   const [editingRouteLink, setEditingRouteLink] = useState<{ linkId: number; segIdx: number } | null>(null);
   const [editingRoutePoints, setEditingRoutePoints] = useState<[number, number][]>([]);
+
+  // Pick-location mode: "node" | "customer" | null
+  const [pickMode, setPickMode] = useState<"node" | "customer" | null>(null);
+
+  // Temporary drag positions for live line updates
+  const [dragNodePos, setDragNodePos] = useState<{ id: number; lat: number; lng: number } | null>(null);
+  const [dragCustomerPos, setDragCustomerPos] = useState<{ id: number; lat: number; lng: number } | null>(null);
 
   // Hover state for link traffic box
   const [hoveredLinkId, setHoveredLinkId] = useState<number | null>(null);
@@ -634,7 +652,8 @@ export default function NetworkMap() {
   function openCreateCustomer() {
     setEditingCustomer(null);
     setCustomerForm({ name: "", address: "", lat: "", lng: "", active: true });
-    setCustomerDialog(true);
+    setPickMode("customer");
+    toast.info("📍 Clique no mapa para posicionar o cliente", { duration: 4000 });
   }
   function openEditCustomer(c: MapCustomer) {
     setEditingCustomer(c);
@@ -724,11 +743,12 @@ export default function NetworkMap() {
     });
   }
 
-  // ─── Node CRUD ──────────────────────────────────────────────────────────────
+  // ─── Node CRUD ──────────────────────────────────────────────────────────────────────────────────
   function openCreateNode() {
     setEditingNode(null);
     setNodeForm(emptyNodeForm());
-    setNodeDialog(true);
+    setPickMode("node");
+    toast.info("📍 Clique no mapa para posicionar o nó", { duration: 4000 });
   }
   function openEditNode(node: NetworkNode) {
     setEditingNode(node);
@@ -1088,10 +1108,27 @@ export default function NetworkMap() {
           </div>
         )}
 
+        {/* Pick-location overlay instruction */}
+        {pickMode && (
+          <div style={{
+            position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
+            zIndex: 2000, background: "rgba(15,23,42,0.92)", borderRadius: 8, padding: "10px 20px",
+            display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 12px rgba(0,0,0,0.5)",
+            color: "white", pointerEvents: "auto", whiteSpace: "nowrap",
+          }}>
+            <span style={{ fontSize: 18 }}>📍</span>
+            <span style={{ fontWeight: 600 }}>Clique no mapa para posicionar o {pickMode === "node" ? "nó" : "cliente"}</span>
+            <button
+              onClick={() => setPickMode(null)}
+              style={{ marginLeft: 12, background: "transparent", color: "#94a3b8", border: "1px solid #334155", borderRadius: 5, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}
+            >✕ Cancelar</button>
+          </div>
+        )}
+
         <MapContainer
           center={defaultCenter}
           zoom={9}
-          style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }}
+          style={{ width: "100%", height: "100%", position: "absolute", inset: 0, cursor: pickMode ? "crosshair" : "" }}
           scrollWheelZoom={true}
         >
           <InvalidateSize />
@@ -1102,9 +1139,31 @@ export default function NetworkMap() {
 
           {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodesWithCoords as NetworkNode[]} />}
 
+          {/* Pick-location click handler */}
+          {pickMode && (
+            <MapClickHandler
+              onPick={useCallback((lat: number, lng: number) => {
+                if (pickMode === "node") {
+                  setNodeForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+                  setNodeDialog(true);
+                } else if (pickMode === "customer") {
+                  setCustomerForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+                  setCustomerDialog(true);
+                }
+                setPickMode(null);
+              }, [pickMode])}
+            />
+          )}
+
           {/* Draw links (polylines) — each link can have multiple segments */}
           {links.flatMap((link) => {
-            const fromNode = nodes.find((n) => n.id === link.fromNodeId);
+            const fromNodeRaw = nodes.find((n) => n.id === link.fromNodeId);
+            // Use live drag position if this node is being dragged
+            const fromNode = fromNodeRaw ? (
+              dragNodePos?.id === fromNodeRaw.id
+                ? { ...fromNodeRaw, lat: dragNodePos.lat, lng: dragNodePos.lng }
+                : fromNodeRaw
+            ) : undefined;
             if (!fromNode?.lat || !fromNode?.lng) return [];
             const isHovered = hoveredLinkId === link.id;
 
@@ -1127,7 +1186,13 @@ export default function NetworkMap() {
               : [{ id: -1, linkId: link.id, toNodeId: link.toNodeId, toPortId: link.toPortId, toPortName: link.toPortName, routePoints: link.routePoints, color: null, capacityBps: link.capacityBps }];
 
             return segs.map((seg, segIdx) => {
-              const toNode = nodes.find((n) => n.id === seg.toNodeId);
+              const toNodeRaw = nodes.find((n) => n.id === seg.toNodeId);
+              // Use live drag position if this node is being dragged
+              const toNode = toNodeRaw ? (
+                dragNodePos?.id === toNodeRaw.id
+                  ? { ...toNodeRaw, lat: dragNodePos.lat, lng: dragNodePos.lng }
+                  : toNodeRaw
+              ) : undefined;
               if (!toNode?.lat || !toNode?.lng) return null;
               const rawPts = seg.routePoints ?? link.routePoints ?? [];
               const safeRoutePoints = rawPts.filter(
@@ -1137,8 +1202,10 @@ export default function NetworkMap() {
                   typeof pt[0] === 'number' && typeof pt[1] === 'number' &&
                   isFinite(pt[0]) && isFinite(pt[1])
               );
+              // When dragging a node, always show straight line (ignore stored route)
+              const isDraggingEndpoint = dragNodePos && (dragNodePos.id === link.fromNodeId || dragNodePos.id === seg.toNodeId);
               const positions: [number, number][] =
-                link.useRoadRoute && safeRoutePoints.length > 1
+                !isDraggingEndpoint && link.useRoadRoute && safeRoutePoints.length > 1
                   ? safeRoutePoints
                   : [[fromNode.lat!, fromNode.lng!], [toNode.lat, toNode.lng]];
               const segColor = seg.color || lineColor;
@@ -1204,18 +1271,25 @@ export default function NetworkMap() {
 
           {/* ─── Customer access links (polylines) ─── */}
           {customerLinks.filter(cl => cl.active).map((cl) => {
-            const customer = customers.find(c => c.id === cl.customerId);
-            const node = nodes.find(n => n.id === cl.nodeId);
-            if (!customer?.lat || !customer?.lng || !node?.lat || !node?.lng) return null;
+            const customerRaw = customers.find(c => c.id === cl.customerId);
+            const nodeRaw = nodes.find(n => n.id === cl.nodeId);
+            if (!customerRaw?.lat || !customerRaw?.lng || !nodeRaw?.lat || !nodeRaw?.lng) return null;
+            // Live drag positions
+            const custLat = dragCustomerPos?.id === customerRaw.id ? dragCustomerPos.lat : customerRaw.lat!;
+            const custLng = dragCustomerPos?.id === customerRaw.id ? dragCustomerPos.lng : customerRaw.lng!;
+            const nodeLat = dragNodePos?.id === nodeRaw.id ? dragNodePos.lat : nodeRaw.lat!;
+            const nodeLng = dragNodePos?.id === nodeRaw.id ? dragNodePos.lng : nodeRaw.lng!;
             const isEditingThis = editingCustomerRoute?.linkId === cl.id;
             const rawPts = cl.routePoints ?? [];
             const safePts = rawPts.filter((pt): pt is [number, number] =>
               Array.isArray(pt) && pt.length === 2 && pt[0] != null && pt[1] != null &&
               typeof pt[0] === 'number' && typeof pt[1] === 'number' && isFinite(pt[0]) && isFinite(pt[1])
             );
-            const positions: [number, number][] = safePts.length > 1
+            // When dragging an endpoint, always show straight line
+            const isDraggingEndpoint = (dragCustomerPos?.id === customerRaw.id) || (dragNodePos?.id === nodeRaw.id);
+            const positions: [number, number][] = !isDraggingEndpoint && safePts.length > 1
               ? safePts
-              : [[customer.lat, customer.lng], [node.lat!, node.lng!]];
+              : [[custLat, custLng], [nodeLat, nodeLng]];
             return (
               <Polyline
                 key={`cal-${cl.id}`}
@@ -1246,8 +1320,13 @@ export default function NetworkMap() {
               icon={makeCustomerIcon(customer as MapCustomer, showLabels)}
               draggable={true}
               eventHandlers={{
+                drag(e) {
+                  const latlng = (e.target as L.Marker).getLatLng();
+                  setDragCustomerPos({ id: customer.id, lat: latlng.lat, lng: latlng.lng });
+                },
                 dragend(e) {
                   const latlng = (e.target as L.Marker).getLatLng();
+                  setDragCustomerPos(null);
                   updateCustomer.mutate({ id: customer.id, lat: latlng.lat, lng: latlng.lng },
                     { onSuccess: () => { refetchCustomers(); toast.success(`${customer.name} reposicionado`); } }
                   );
@@ -1269,8 +1348,13 @@ export default function NetworkMap() {
                 icon={makeNodeIcon(node as NetworkNode, pct, showLabels)}
                 draggable={true}
                 eventHandlers={{
+                  drag(e) {
+                    const latlng = (e.target as L.Marker).getLatLng();
+                    setDragNodePos({ id: node.id, lat: latlng.lat, lng: latlng.lng });
+                  },
                   dragend(e) {
                     const latlng = (e.target as L.Marker).getLatLng();
+                    setDragNodePos(null);
                     updateNode.mutate(
                       {
                         id: node.id,
