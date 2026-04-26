@@ -368,3 +368,9 @@
 - [x] Clicar no mapa para definir coordenadas ao criar nó ou cliente
 - [x] Arrastar marcadores de nó e cliente no mapa para reposicionar
 - [x] Linhas conectadas acompanham dinamicamente ao arrastar nó/cliente
+
+## Fase atual — Correções no Mapa de Rede
+
+- [x] Bug fix: MapFitBounds usa ref `hasFitted` para executar fitBounds apenas uma vez, corrigindo desaparecimento de linhas ao fazer zoom out
+- [x] Feature: botão "Ocultar/Mostrar inativos" no header do NetworkMap para filtrar nós com `active=false` do mapa
+- [x] Bug fix: polylines (links) também respeitam a visibilidade de nós inativos (fromNode e toNode buscados em `visibleNodes`)

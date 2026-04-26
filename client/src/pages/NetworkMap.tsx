@@ -355,9 +355,12 @@ function makeCustomerIcon(customer: MapCustomer, showLabel: boolean): L.DivIcon 
 
 function MapFitBounds({ nodes }: { nodes: NetworkNode[] }) {
   const map = useMap();
+  const hasFitted = useRef(false);
   useEffect(() => {
+    if (hasFitted.current) return;
     const withCoords = nodes.filter((n) => n.lat && n.lng);
     if (withCoords.length === 0) return;
+    hasFitted.current = true;
     if (withCoords.length === 1) {
       map.setView([withCoords[0].lat!, withCoords[0].lng!], 12);
     } else {
@@ -1009,7 +1012,15 @@ export default function NetworkMap() {
   }, []);
 
   // ─── Derived values ──────────────────────────────────────────────────────────
-  const nodesWithCoords = nodes.filter((n) => n.lat && n.lng);
+  const [showInactiveNodes, setShowInactiveNodes] = useState(true);
+  const visibleNodes = useMemo(
+    () => showInactiveNodes ? nodes : nodes.filter((n) => n.active !== false),
+    [nodes, showInactiveNodes]
+  );
+  const nodesWithCoords = useMemo(
+    () => visibleNodes.filter((n) => n.lat && n.lng),
+    [visibleNodes]
+  );
   const defaultCenter: [number, number] = [-8.89, -36.49];
 
   return (
@@ -1025,6 +1036,15 @@ export default function NetworkMap() {
         </div>
         <div className="flex items-center gap-2">
           {/* Toggle labels */}
+          <Button
+            variant={showInactiveNodes ? "outline" : "default"}
+            size="sm"
+            onClick={() => setShowInactiveNodes((v) => !v)}
+            title={showInactiveNodes ? "Ocultar nós inativos" : "Mostrar nós inativos"}
+          >
+            {showInactiveNodes ? <EyeOff className="w-4 h-4 mr-1" /> : <Eye className="w-4 h-4 mr-1" />}
+            {showInactiveNodes ? "Ocultar inativos" : "Mostrar inativos"}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1214,7 +1234,7 @@ export default function NetworkMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
-          {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodesWithCoords as NetworkNode[]} />}
+          {nodesWithCoords.length > 0 && <MapFitBounds nodes={nodes.filter((n) => n.lat && n.lng) as NetworkNode[]} />}
 
           {/* Pick-location click handler */}
           {pickMode && (
@@ -1223,7 +1243,7 @@ export default function NetworkMap() {
 
           {/* Draw links (polylines) — each link can have multiple segments */}
           {links.flatMap((link) => {
-            const fromNodeRaw = nodes.find((n) => n.id === link.fromNodeId);
+            const fromNodeRaw = visibleNodes.find((n) => n.id === link.fromNodeId);
             // Use live drag position if this node is being dragged
             const fromNode = fromNodeRaw ? (
               dragNodePos?.id === fromNodeRaw.id
@@ -1252,7 +1272,7 @@ export default function NetworkMap() {
               : [{ id: -1, linkId: link.id, toNodeId: link.toNodeId, toPortId: link.toPortId, toPortName: link.toPortName, routePoints: link.routePoints, color: null, capacityBps: link.capacityBps }];
 
             return segs.map((seg, segIdx) => {
-              const toNodeRaw = nodes.find((n) => n.id === seg.toNodeId);
+              const toNodeRaw = visibleNodes.find((n) => n.id === seg.toNodeId);
               // Use live drag position if this node is being dragged
               const toNode = toNodeRaw ? (
                 dragNodePos?.id === toNodeRaw.id
