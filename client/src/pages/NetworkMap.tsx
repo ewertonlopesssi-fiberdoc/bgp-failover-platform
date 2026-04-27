@@ -473,9 +473,9 @@ function NodeMarker({
       draggable: true,
     });
     markerRef.current = marker;
-    marker.addTo(map);
 
     const isDragging = { current: false };
+    let domEl: HTMLElement | null = null;
 
     const handleMouseDown = (e: MouseEvent) => {
       // Stop the mousedown from reaching the map so it won't start pan
@@ -510,18 +510,25 @@ function NodeMarker({
       }
     };
 
-    // Attach native mousedown to the marker element to stop pan propagation
-    const el = marker.getElement();
-    if (el) el.addEventListener('mousedown', handleMouseDown, { capture: true });
-
     marker.on('dragstart', handleDragStart);
     marker.on('drag', handleDrag);
     marker.on('dragend', handleDragEnd);
     marker.on('click', handleClick);
     marker.on('dblclick', handleDblClick);
 
+    // Wait for the marker to be added to the DOM before attaching native mousedown
+    // getElement() returns null synchronously right after addTo()
+    const handleAdd = () => {
+      domEl = marker.getElement() ?? null;
+      if (domEl) domEl.addEventListener('mousedown', handleMouseDown, { capture: true });
+    };
+    marker.once('add', handleAdd);
+
+    marker.addTo(map);
+
     return () => {
-      if (el) el.removeEventListener('mousedown', handleMouseDown, { capture: true });
+      if (domEl) domEl.removeEventListener('mousedown', handleMouseDown, { capture: true });
+      marker.off('add', handleAdd);
       marker.off('dragstart', handleDragStart);
       marker.off('drag', handleDrag);
       marker.off('dragend', handleDragEnd);
