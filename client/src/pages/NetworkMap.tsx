@@ -1,6 +1,6 @@
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 
 // ─── InvalidateSize: forces Leaflet to recalculate tile layout after mount ────
@@ -439,7 +439,6 @@ async function fetchOsrmRoute(
 function NodeMarker({
   node,
   icon,
-  onDragStart,
   onDrag,
   onDragEnd,
   onClick,
@@ -451,106 +450,60 @@ function NodeMarker({
   onDragEnd: (lat: number, lng: number) => void;
   onClick: () => void;
 }) {
-  const map = useMap();
-  // Keep latest callbacks in refs so the stable effect below always calls the current version
-  const onDragRef = useRef(onDrag);
-  const onDragEndRef = useRef(onDragEnd);
-  const onClickRef = useRef(onClick);
-  const onDragStartRef = useRef(onDragStart);
-  useEffect(() => { onDragRef.current = onDrag; }, [onDrag]);
-  useEffect(() => { onDragEndRef.current = onDragEnd; }, [onDragEnd]);
-  useEffect(() => { onClickRef.current = onClick; }, [onClick]);
-  useEffect(() => { onDragStartRef.current = onDragStart; }, [onDragStart]);
-
-  // Create the Leaflet marker once and manage its full lifecycle imperatively
   const markerRef = useRef<L.Marker | null>(null);
-  const iconRef = useRef(icon);
+  const map = useMap();
+  const isDragging = useRef(false);
 
   useEffect(() => {
-    // Create marker imperatively
-    const marker = L.marker([node.lat!, node.lng!], {
-      icon: iconRef.current,
-      draggable: true,
-    });
-    markerRef.current = marker;
-
-    const isDragging = { current: false };
-    let domEl: HTMLElement | null = null;
-
-    const handleMouseDown = (e: MouseEvent) => {
-      // Stop the mousedown from reaching the map so it won't start pan
-      e.stopPropagation();
-    };
+    const marker = markerRef.current;
+    if (!marker) return;
 
     const handleDragStart = () => {
       isDragging.current = true;
       map.dragging.disable();
-      onDragStartRef.current?.();
     };
     const handleDrag = () => {
       const latlng = marker.getLatLng();
-      onDragRef.current(latlng.lat, latlng.lng);
+      onDrag(latlng.lat, latlng.lng);
     };
     const handleDragEnd = () => {
       const latlng = marker.getLatLng();
-      onDragEndRef.current(latlng.lat, latlng.lng);
-      setTimeout(() => {
-        map.dragging.enable();
-        isDragging.current = false;
-      }, 50);
+      map.dragging.enable();
+      setTimeout(() => { isDragging.current = false; }, 200);
+      onDragEnd(latlng.lat, latlng.lng);
     };
     const handleClick = () => {
       if (isDragging.current) return;
-      onClickRef.current();
-    };
-    const handleDblClick = (e: L.LeafletMouseEvent) => {
-      if (e.originalEvent) {
-        L.DomEvent.stopPropagation(e.originalEvent);
-        L.DomEvent.preventDefault(e.originalEvent);
-      }
+      onClick();
     };
 
     marker.on('dragstart', handleDragStart);
     marker.on('drag', handleDrag);
     marker.on('dragend', handleDragEnd);
     marker.on('click', handleClick);
-    marker.on('dblclick', handleDblClick);
-
-    // Wait for the marker to be added to the DOM before attaching native mousedown
-    // getElement() returns null synchronously right after addTo()
-    const handleAdd = () => {
-      domEl = marker.getElement() ?? null;
-      if (domEl) domEl.addEventListener('mousedown', handleMouseDown, { capture: true });
-    };
-    marker.once('add', handleAdd);
-
-    marker.addTo(map);
-
     return () => {
-      if (domEl) domEl.removeEventListener('mousedown', handleMouseDown, { capture: true });
-      marker.off('add', handleAdd);
       marker.off('dragstart', handleDragStart);
       marker.off('drag', handleDrag);
       marker.off('dragend', handleDragEnd);
       marker.off('click', handleClick);
-      marker.off('dblclick', handleDblClick);
-      marker.remove();
-      markerRef.current = null;
     };
-  // Only re-create when node id or map changes; icon/callbacks are handled via refs
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, node.id, node.lat, node.lng]);
+  }, [map, onDrag, onDragEnd, onClick]);
 
-  // Update icon without recreating the marker
-  useEffect(() => {
-    iconRef.current = icon;
-    markerRef.current?.setIcon(icon);
-  }, [icon]);
-
-  return null; // Marker is managed imperatively
+  return (
+    <Marker
+      ref={markerRef}
+      position={[node.lat!, node.lng!]}
+      icon={icon}
+      draggable={true}
+    />
+  );
 }
 
-// ─── CustomerMarker: dedicated component with proper drag handling ──────────────
+// Memoized NodeMarker — prevents remount when parent re-renders (e.g. pct/showLabels change)
+// The icon prop updates in-place via setIcon inside the component
+const NodeMarkerMemo = React.memo(NodeMarker, (prev, next) => prev.node.id === next.node.id);
+
+// ─── CustomerMarker: dedicated component with proper drag handling ──────────────────
 function CustomerMarker({
   customer,
   showLabels,
@@ -1544,8 +1497,8 @@ export default function NetworkMap() {
           {nodesWithCoords.map((node) => {
             const pct = nodeUtilMap[node.id] ?? null;
             return (
-              <NodeMarker
-                key={`${node.id}-${showLabels}-${pct?.toFixed(0)}`}
+              <NodeMarkerMemo
+                key={node.id}
                 node={node as NetworkNode}
                 icon={makeNodeIcon(node as NetworkNode, pct, showLabels)}
                 onDrag={(lat, lng) => setDragNodePos({ id: node.id, lat, lng })}
