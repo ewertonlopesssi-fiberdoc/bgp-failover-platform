@@ -435,7 +435,7 @@ async function fetchOsrmRoute(
   return null;
 }
 
-// ─── NodeMarker: 100% imperative — creates L.Marker directly to avoid react-leaflet event issues ─────
+// ─── NodeMarker: same pattern as CustomerMarker ─────────────────────────────
 function NodeMarker({
   node,
   icon,
@@ -445,7 +445,6 @@ function NodeMarker({
 }: {
   node: NetworkNode;
   icon: L.DivIcon;
-  onDragStart?: () => void;
   onDrag: (lat: number, lng: number) => void;
   onDragEnd: (lat: number, lng: number) => void;
   onClick: () => void;
@@ -457,6 +456,12 @@ function NodeMarker({
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
+
+    // react-leaflet 5 does NOT call marker.dragging.enable() on mount —
+    // it only toggles when the draggable prop *changes*. We must enable explicitly.
+    if (marker.dragging) {
+      marker.dragging.enable();
+    }
 
     const handleDragStart = () => {
       isDragging.current = true;
@@ -499,9 +504,9 @@ function NodeMarker({
   );
 }
 
-// Memoized NodeMarker — prevents remount when parent re-renders (e.g. pct/showLabels change)
-// The icon prop updates in-place via setIcon inside the component
-const NodeMarkerMemo = React.memo(NodeMarker, (prev, next) => prev.node.id === next.node.id);
+// NodeMarkerMemo: only prevents remount when node.id changes
+// Callbacks are allowed to change (React.memo default comparison would block them)
+const NodeMarkerMemo = React.memo(NodeMarker);
 
 // ─── CustomerMarker: dedicated component with proper drag handling ──────────────────
 function CustomerMarker({
@@ -525,6 +530,12 @@ function CustomerMarker({
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
+
+    // react-leaflet 5 does NOT call marker.dragging.enable() on mount —
+    // it only toggles when the draggable prop *changes*. We must enable explicitly.
+    if (marker.dragging) {
+      marker.dragging.enable();
+    }
 
     const handleDragStart = () => {
       isDragging.current = true;
