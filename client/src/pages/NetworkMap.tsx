@@ -435,7 +435,7 @@ async function fetchOsrmRoute(
   return null;
 }
 
-// ─── NodeMarker: dedicated component with proper drag handling ──────────────────
+// ─── NodeMarker: 100% imperative — creates L.Marker directly to avoid react-leaflet event issues ─────
 function NodeMarker({
   node,
   icon,
@@ -451,34 +451,57 @@ function NodeMarker({
   onDragEnd: (lat: number, lng: number) => void;
   onClick: () => void;
 }) {
-  const markerRef = useRef<L.Marker | null>(null);
   const map = useMap();
-  const isDragging = useRef(false);
+  // Keep latest callbacks in refs so the stable effect below always calls the current version
+  const onDragRef = useRef(onDrag);
+  const onDragEndRef = useRef(onDragEnd);
+  const onClickRef = useRef(onClick);
+  const onDragStartRef = useRef(onDragStart);
+  useEffect(() => { onDragRef.current = onDrag; }, [onDrag]);
+  useEffect(() => { onDragEndRef.current = onDragEnd; }, [onDragEnd]);
+  useEffect(() => { onClickRef.current = onClick; }, [onClick]);
+  useEffect(() => { onDragStartRef.current = onDragStart; }, [onDragStart]);
+
+  // Create the Leaflet marker once and manage its full lifecycle imperatively
+  const markerRef = useRef<L.Marker | null>(null);
+  const iconRef = useRef(icon);
 
   useEffect(() => {
-    const marker = markerRef.current;
-    if (!marker) return;
+    // Create marker imperatively
+    const marker = L.marker([node.lat!, node.lng!], {
+      icon: iconRef.current,
+      draggable: true,
+    });
+    markerRef.current = marker;
+    marker.addTo(map);
+
+    const isDragging = { current: false };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      // Stop the mousedown from reaching the map so it won't start pan
+      e.stopPropagation();
+    };
 
     const handleDragStart = () => {
       isDragging.current = true;
       map.dragging.disable();
-      onDragStart?.();
+      onDragStartRef.current?.();
     };
     const handleDrag = () => {
       const latlng = marker.getLatLng();
-      onDrag(latlng.lat, latlng.lng);
+      onDragRef.current(latlng.lat, latlng.lng);
     };
     const handleDragEnd = () => {
       const latlng = marker.getLatLng();
+      onDragEndRef.current(latlng.lat, latlng.lng);
       setTimeout(() => {
         map.dragging.enable();
         isDragging.current = false;
       }, 50);
-      onDragEnd(latlng.lat, latlng.lng);
     };
     const handleClick = () => {
       if (isDragging.current) return;
-      onClick();
+      onClickRef.current();
     };
     const handleDblClick = (e: L.LeafletMouseEvent) => {
       if (e.originalEvent) {
@@ -487,28 +510,37 @@ function NodeMarker({
       }
     };
 
+    // Attach native mousedown to the marker element to stop pan propagation
+    const el = marker.getElement();
+    if (el) el.addEventListener('mousedown', handleMouseDown, { capture: true });
+
     marker.on('dragstart', handleDragStart);
     marker.on('drag', handleDrag);
     marker.on('dragend', handleDragEnd);
     marker.on('click', handleClick);
     marker.on('dblclick', handleDblClick);
+
     return () => {
+      if (el) el.removeEventListener('mousedown', handleMouseDown, { capture: true });
       marker.off('dragstart', handleDragStart);
       marker.off('drag', handleDrag);
       marker.off('dragend', handleDragEnd);
       marker.off('click', handleClick);
       marker.off('dblclick', handleDblClick);
+      marker.remove();
+      markerRef.current = null;
     };
-  }, [map, onDrag, onDragEnd, onClick, onDragStart]);
+  // Only re-create when node id or map changes; icon/callbacks are handled via refs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, node.id, node.lat, node.lng]);
 
-  return (
-    <Marker
-      ref={markerRef}
-      position={[node.lat!, node.lng!]}
-      icon={icon}
-      draggable={true}
-    />
-  );
+  // Update icon without recreating the marker
+  useEffect(() => {
+    iconRef.current = icon;
+    markerRef.current?.setIcon(icon);
+  }, [icon]);
+
+  return null; // Marker is managed imperatively
 }
 
 // ─── CustomerMarker: dedicated component with proper drag handling ──────────────
