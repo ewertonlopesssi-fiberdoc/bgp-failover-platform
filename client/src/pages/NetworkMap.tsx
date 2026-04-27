@@ -370,10 +370,28 @@ function MapFitBounds({ nodes, hasFitted }: { nodes: NetworkNode[]; hasFitted: R
   return null;
 }
 
-// Disable double-click zoom via imperative API (guarantees it even after remounts)
+// Block double-click zoom via DOM event — does NOT touch map.dragging or other Leaflet handlers
 function DisableDblClickZoom() {
   const map = useMap();
-  useEffect(() => { map.doubleClickZoom.disable(); }, [map]);
+  useEffect(() => {
+    const container = map.getContainer();
+    const handler = (e: MouseEvent) => {
+      // Only block dblclick on the map background tiles, not on markers
+      const target = e.target as HTMLElement;
+      const isMapBackground =
+        target.classList.contains('leaflet-container') ||
+        target.classList.contains('leaflet-tile') ||
+        target.classList.contains('leaflet-tile-pane') ||
+        target.tagName === 'CANVAS' ||
+        target.tagName === 'IMG';
+      if (isMapBackground) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    container.addEventListener('dblclick', handler, true);
+    return () => container.removeEventListener('dblclick', handler, true);
+  }, [map]);
   return null;
 }
 
@@ -457,12 +475,6 @@ function NodeMarker({
     const marker = markerRef.current;
     if (!marker) return;
 
-    // react-leaflet 5 does NOT call marker.dragging.enable() on mount —
-    // it only toggles when the draggable prop *changes*. We must enable explicitly.
-    if (marker.dragging) {
-      marker.dragging.enable();
-    }
-
     const handleDragStart = () => {
       isDragging.current = true;
       map.dragging.disable();
@@ -530,12 +542,6 @@ function CustomerMarker({
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
-
-    // react-leaflet 5 does NOT call marker.dragging.enable() on mount —
-    // it only toggles when the draggable prop *changes*. We must enable explicitly.
-    if (marker.dragging) {
-      marker.dragging.enable();
-    }
 
     const handleDragStart = () => {
       isDragging.current = true;
@@ -1313,7 +1319,6 @@ export default function NetworkMap() {
           zoom={9}
           style={{ width: "100%", height: "100%", position: "absolute", inset: 0, cursor: pickMode ? "crosshair" : "" }}
           scrollWheelZoom={true}
-          doubleClickZoom={false}
         >
           <InvalidateSize />
           <TileLayer

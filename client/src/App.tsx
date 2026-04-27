@@ -19,6 +19,7 @@ import LinuxMonitor from "./pages/LinuxMonitor";
 import TrafficAnalysis from "./pages/TrafficAnalysis";
 import InterfaceConfig from "./pages/InterfaceConfig";
 import NetworkMap from "./pages/NetworkMap";
+import MapDragTest from "./pages/MapDragTest";
 import DashboardLayout from "./components/DashboardLayout";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/traffic" component={() => <ProtectedRoute component={TrafficAnalysis} />} />
       <Route path="/interface-config" component={() => <ProtectedRoute component={InterfaceConfig} />} />
       <Route path="/network-map" component={() => <ProtectedRoute component={NetworkMap} />} />
+      <Route path="/map-drag-test" component={() => <MapDragTest />} />
       <Route component={() => <Redirect to="/" />} />
     </Switch>
   );
