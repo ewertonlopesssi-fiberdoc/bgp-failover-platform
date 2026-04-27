@@ -377,3 +377,4 @@
 - [x] Bug fix: zoom abrupto ao clicar em nó — adicionado handler `click` que abre o painel de edição sem zoom, `dblclick` que previne zoom duplo, e `doubleClickZoom={false}` no MapContainer
 - [x] Bug fix: arraste de nós no mapa parou de funcionar após correção do zoom — remover preventDefault do click e usar abordagem alternativa para bloquear zoom sem quebrar drag
 - [x] Bug fix: zoom+pan abrupto ao clicar em nó — causa raiz era o react-remove-scroll do Radix Dialog que bloqueava o scroll do body e deslocava o Leaflet; corrigido com modal={false} em todos os Dialogs e Sheet do NetworkMap
+- [x] Bug fix: arrastar nó move o mapa inteiro em vez do nó — criado NodeMarker com controle imperativo (map.dragging.disable/enable no dragstart/dragend), igual ao CustomerMarker

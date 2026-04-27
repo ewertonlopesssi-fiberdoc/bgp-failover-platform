@@ -435,6 +435,82 @@ async function fetchOsrmRoute(
   return null;
 }
 
+// ─── NodeMarker: dedicated component with proper drag handling ──────────────────
+function NodeMarker({
+  node,
+  icon,
+  onDragStart,
+  onDrag,
+  onDragEnd,
+  onClick,
+}: {
+  node: NetworkNode;
+  icon: L.DivIcon;
+  onDragStart?: () => void;
+  onDrag: (lat: number, lng: number) => void;
+  onDragEnd: (lat: number, lng: number) => void;
+  onClick: () => void;
+}) {
+  const markerRef = useRef<L.Marker | null>(null);
+  const map = useMap();
+  const isDragging = useRef(false);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+
+    const handleDragStart = () => {
+      isDragging.current = true;
+      map.dragging.disable();
+      onDragStart?.();
+    };
+    const handleDrag = () => {
+      const latlng = marker.getLatLng();
+      onDrag(latlng.lat, latlng.lng);
+    };
+    const handleDragEnd = () => {
+      const latlng = marker.getLatLng();
+      setTimeout(() => {
+        map.dragging.enable();
+        isDragging.current = false;
+      }, 50);
+      onDragEnd(latlng.lat, latlng.lng);
+    };
+    const handleClick = () => {
+      if (isDragging.current) return;
+      onClick();
+    };
+    const handleDblClick = (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent) {
+        L.DomEvent.stopPropagation(e.originalEvent);
+        L.DomEvent.preventDefault(e.originalEvent);
+      }
+    };
+
+    marker.on('dragstart', handleDragStart);
+    marker.on('drag', handleDrag);
+    marker.on('dragend', handleDragEnd);
+    marker.on('click', handleClick);
+    marker.on('dblclick', handleDblClick);
+    return () => {
+      marker.off('dragstart', handleDragStart);
+      marker.off('drag', handleDrag);
+      marker.off('dragend', handleDragEnd);
+      marker.off('click', handleClick);
+      marker.off('dblclick', handleDblClick);
+    };
+  }, [map, onDrag, onDragEnd, onClick, onDragStart]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[node.lat!, node.lng!]}
+      icon={icon}
+      draggable={true}
+    />
+  );
+}
+
 // ─── CustomerMarker: dedicated component with proper drag handling ──────────────
 function CustomerMarker({
   customer,
@@ -1429,51 +1505,31 @@ export default function NetworkMap() {
           {nodesWithCoords.map((node) => {
             const pct = nodeUtilMap[node.id] ?? null;
             return (
-              <Marker
+              <NodeMarker
                 key={`${node.id}-${showLabels}-${pct?.toFixed(0)}`}
-                position={[node.lat!, node.lng!]}
+                node={node as NetworkNode}
                 icon={makeNodeIcon(node as NetworkNode, pct, showLabels)}
-                draggable={true}
-                eventHandlers={{
-                  click(e) {
-                    // Stop propagation to map so it doesn't trigger map-level click handlers
-                    if (e.originalEvent) {
-                      L.DomEvent.stopPropagation(e.originalEvent);
+                onDrag={(lat, lng) => setDragNodePos({ id: node.id, lat, lng })}
+                onDragEnd={(lat, lng) => {
+                  setDragNodePos(null);
+                  updateNode.mutate(
+                    {
+                      id: node.id,
+                      name: node.name,
+                      city: node.city ?? undefined,
+                      nodeType: node.nodeType as NodeType,
+                      mgmtIp: node.mgmtIp ?? undefined,
+                      lat,
+                      lng,
+                      active: node.active ?? true,
+                    },
+                    {
+                      onSuccess: () => { refetchNodes(); toast.success(`${node.name} reposicionado`); },
+                      onError: (err) => toast.error(`Erro ao mover: ${err.message}`),
                     }
-                    openEditNode(node as NetworkNode);
-                  },
-                  dblclick(e) {
-                    // Stop dblclick from reaching the map (prevents any residual zoom)
-                    if (e.originalEvent) {
-                      L.DomEvent.stopPropagation(e.originalEvent);
-                      L.DomEvent.preventDefault(e.originalEvent);
-                    }
-                  },
-                  drag(e) {
-                    const latlng = (e.target as L.Marker).getLatLng();
-                    setDragNodePos({ id: node.id, lat: latlng.lat, lng: latlng.lng });
-                  },
-                  dragend(e) {
-                    const latlng = (e.target as L.Marker).getLatLng();
-                    setDragNodePos(null);
-                    updateNode.mutate(
-                      {
-                        id: node.id,
-                        name: node.name,
-                        city: node.city ?? undefined,
-                        nodeType: node.nodeType as NodeType,
-                        mgmtIp: node.mgmtIp ?? undefined,
-                        lat: latlng.lat,
-                        lng: latlng.lng,
-                        active: node.active ?? true,
-                      },
-                      {
-                        onSuccess: () => { refetchNodes(); toast.success(`${node.name} reposicionado`); },
-                        onError: (err) => toast.error(`Erro ao mover: ${err.message}`),
-                      }
-                    );
-                  },
+                  );
                 }}
+                onClick={() => openEditNode(node as NetworkNode)}
               />
             );
           })}
