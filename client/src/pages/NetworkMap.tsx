@@ -1612,7 +1612,7 @@ export default function NetworkMap() {
       })()}
 
       {/* ─── Sidebar ─────────────────────────────────────────────────────────── */}
-      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen} modal={false}>
         <SheetContent side="right" className="w-[420px] sm:w-[480px] overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
@@ -1790,7 +1790,7 @@ export default function NetworkMap() {
       </Sheet>
 
       {/* ─── Node Dialog ─────────────────────────────────────────────────────── */}
-      <Dialog open={nodeDialog} onOpenChange={setNodeDialog}>
+      <Dialog open={nodeDialog} onOpenChange={setNodeDialog} modal={false}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingNode ? "Editar Nó" : "Adicionar Nó"}</DialogTitle>
@@ -1853,7 +1853,7 @@ export default function NetworkMap() {
       </Dialog>
 
       {/* ─── Link Dialog ─────────────────────────────────────────────────────── */}
-      <Dialog open={linkDialog} onOpenChange={setLinkDialog}>
+      <Dialog open={linkDialog} onOpenChange={setLinkDialog} modal={false}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingLink ? "Editar Link" : "Adicionar Link"}</DialogTitle>
@@ -2077,7 +2077,7 @@ export default function NetworkMap() {
       </Dialog>
 
       {/* ─── Import Dialog ───────────────────────────────────────────────────── */}
-      <Dialog open={importDialog} onOpenChange={setImportDialog}>
+      <Dialog open={importDialog} onOpenChange={setImportDialog} modal={false}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -2122,7 +2122,7 @@ export default function NetworkMap() {
       </Dialog>
 
       {/* ─── Customer Dialog ────────────────────────────────────────────────────────────────────────────────── */}
-      <Dialog open={customerDialog} onOpenChange={setCustomerDialog}>
+      <Dialog open={customerDialog} onOpenChange={setCustomerDialog} modal={false}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingCustomer ? "Editar Cliente" : "Adicionar Cliente"}</DialogTitle>
@@ -2164,7 +2164,7 @@ export default function NetworkMap() {
       </Dialog>
 
       {/* ─── Customer Access Link Dialog ────────────────────────────────────────────────────────────────────────────────── */}
-      <Dialog open={customerLinkDialog} onOpenChange={setCustomerLinkDialog}>
+      <Dialog open={customerLinkDialog} onOpenChange={setCustomerLinkDialog} modal={false}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingCustomerLink ? "Editar Link de Acesso" : "Novo Link de Acesso"}</DialogTitle>
